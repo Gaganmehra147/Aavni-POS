@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@theme {
+  --color-maroon: #681C32;
+  --color-maroon-dark: #451222;
+  --color-maroon-light: #892844;
+  --color-maroon-subtle: #F6EBF0;
+  
+  --color-cream: #F8F5F0;
+  --color-cream-dark: #ECE5DC;
+  
+  --color-text-main: #30262A;
+  --color-text-muted: #776C70;
+  
+  --color-border-main: #E9DFE2;
+  --color-border-subtle: #F0E8EA;
+  
+  --color-success: #28794B;
+  --color-warning: #B7791F;
+  --color-error: #B42332;
+
+  --font-serif: 'Cinzel', serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+:root {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F8F5F0;
+}
+::-webkit-scrollbar-thumb {
+  background: #E9DFE2;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #681C32;
+}
+
+/* Print specific styles */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+  }
+  
+  .no-print,
+  nav,
+  aside,
+  header,
+  .sidebar,
+  button:not(.allow-print) {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-page {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+
+  /* Thermal 80mm roll */
+  @page thermal-80 {
+    size: 80mm auto;
+    margin: 2mm;
+  }
+  
+  .thermal-receipt {
+    width: 76mm;
+    max-width: 76mm;
+    margin: 0 auto;
+    font-size: 11px;
+    line-height: 1.3;
+    font-family: 'Courier New', Courier, monospace;
+    color: #000;
+  }
+}
