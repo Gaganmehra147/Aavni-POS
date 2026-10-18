@@ -36,6 +36,7 @@ export const ProductCatalog: React.FC = () => {
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [labelItems, setLabelItems] = useState<any[] | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
 
   const fetchCatalog = async () => {
     setLoading(true);
@@ -80,6 +81,20 @@ export const ProductCatalog: React.FC = () => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const toggleSelectProduct = (id: number) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedProductIds.length === products.length) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(products.map((p) => p.id));
+    }
+  };
+
   const handlePrintLabelsForProduct = (prod: Product) => {
     const items = prod.variants.map((v) => ({
       name: prod.name,
@@ -89,8 +104,36 @@ export const ProductCatalog: React.FC = () => {
       barcode: v.barcode,
       selling_price: v.selling_price,
       mrp: v.mrp,
-      quantity: 1
+      stock_quantity: v.stock_quantity,
+      quantity: Math.max(1, v.stock_quantity || 1)
     }));
+    setLabelItems(items);
+  };
+
+  const handlePrintBulkBarcodes = () => {
+    const targetProds = selectedProductIds.length > 0
+      ? products.filter((p) => selectedProductIds.includes(p.id))
+      : products;
+
+    if (targetProds.length === 0) {
+      alert('No products available to print barcodes');
+      return;
+    }
+
+    const items = targetProds.flatMap((prod) =>
+      prod.variants.map((v) => ({
+        name: prod.name,
+        design_code: prod.design_code,
+        size: v.size,
+        color: v.color,
+        barcode: v.barcode,
+        selling_price: v.selling_price,
+        mrp: v.mrp,
+        stock_quantity: v.stock_quantity,
+        quantity: Math.max(1, v.stock_quantity || 1)
+      }))
+    );
+
     setLabelItems(items);
   };
 
@@ -145,6 +188,24 @@ export const ProductCatalog: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={handlePrintBulkBarcodes}
+            className={`px-3.5 py-2 border rounded-lg text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs transition-colors ${
+              selectedProductIds.length > 0
+                ? 'bg-[#681C32] hover:bg-[#451222] text-white border-transparent'
+                : 'bg-white border-[#E9DFE2] text-[#681C32] hover:bg-[#F6EBF0]'
+            }`}
+            title="Bulk print barcode labels"
+          >
+            <Barcode className="w-4 h-4" />
+            <span>
+              {selectedProductIds.length > 0
+                ? `Print Barcodes (${selectedProductIds.length})`
+                : 'Bulk Barcodes'}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportCSV}
@@ -219,24 +280,60 @@ export const ProductCatalog: React.FC = () => {
             No products found matching filters.
           </div>
         ) : (
-          <div className="divide-y divide-[#E9DFE2]">
-            {products.map((prod) => {
-              const isExpanded = expandedIds[prod.id];
-              const totalStock = prod.variants.reduce((sum, v) => sum + v.stock_quantity, 0);
-              const hasLowStock = prod.variants.some((v) => v.stock_quantity <= v.reorder_threshold);
+          <div>
+            {/* Bulk Selection Bar */}
+            <div className="bg-[#F8F5F0] px-4 py-2.5 border-b border-[#E9DFE2] flex items-center justify-between text-xs">
+              <label className="flex items-center space-x-2.5 cursor-pointer font-bold text-[#30262A] select-none">
+                <input
+                  type="checkbox"
+                  checked={products.length > 0 && selectedProductIds.length === products.length}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded text-[#681C32] accent-[#681C32] cursor-pointer"
+                />
+                <span>
+                  Select All Products ({selectedProductIds.length} of {products.length} selected)
+                </span>
+              </label>
 
-              return (
-                <div key={prod.id} className="transition-colors">
-                  {/* Master row */}
-                  <div className="p-4 flex items-center justify-between hover:bg-[#FDFBFA]">
-                    <div className="flex items-center space-x-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(prod.id)}
-                        className="p-1 text-[#776C70] hover:text-[#681C32]"
-                      >
-                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      </button>
+              {selectedProductIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handlePrintBulkBarcodes}
+                  className="px-3 py-1 bg-[#681C32] hover:bg-[#451222] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+                >
+                  <Barcode className="w-3.5 h-3.5" />
+                  <span>Print Barcodes for {selectedProductIds.length} Selected</span>
+                </button>
+              )}
+            </div>
+
+            <div className="divide-y divide-[#E9DFE2]">
+              {products.map((prod) => {
+                const isExpanded = expandedIds[prod.id];
+                const isSelected = selectedProductIds.includes(prod.id);
+                const totalStock = prod.variants.reduce((sum, v) => sum + v.stock_quantity, 0);
+                const hasLowStock = prod.variants.some((v) => v.stock_quantity <= v.reorder_threshold);
+
+                return (
+                  <div key={prod.id} className={`transition-colors ${isSelected ? 'bg-[#FDFBFA]' : ''}`}>
+                    {/* Master row */}
+                    <div className="p-4 flex items-center justify-between hover:bg-[#FDFBFA]">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectProduct(prod.id)}
+                          className="w-4 h-4 rounded text-[#681C32] accent-[#681C32] cursor-pointer"
+                          title="Select for bulk barcode printing"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(prod.id)}
+                          className="p-1 text-[#776C70] hover:text-[#681C32]"
+                        >
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
 
                       <div>
                         <div className="flex items-center space-x-2">
@@ -348,6 +445,7 @@ export const ProductCatalog: React.FC = () => {
                 </div>
               );
             })}
+            </div>
           </div>
         )}
       </div>
