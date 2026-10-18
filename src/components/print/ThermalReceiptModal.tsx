@@ -162,6 +162,12 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({ invoic
                       <span className="w-1/6 text-right">{it.unit_price}</span>
                       <span className="w-1/6 text-right font-bold">{it.line_total}</span>
                     </div>
+                    {Number(it.discount_amount) > 0 && (
+                      <div className="text-[9px] text-gray-600 flex justify-between italic pl-2 pt-0.5">
+                        <span>Item Discount:</span>
+                        <span>- ₹{Number(it.discount_amount).toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -170,39 +176,14 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({ invoic
             {/* Financial Summary */}
             <div className="py-2 border-b border-black space-y-1 text-[10px]">
               <div className="flex justify-between">
-                <span>Subtotal:</span>
+                <span>Subtotal (MRP):</span>
                 <span>₹{Number(invoice.subtotal).toFixed(2)}</span>
               </div>
               {Number(invoice.discount_total) > 0 && (
-                <div className="flex justify-between">
+                <div className="flex justify-between font-bold">
                   <span>Discount:</span>
                   <span>- ₹{Number(invoice.discount_total).toFixed(2)}</span>
                 </div>
-              )}
-              {store.is_gst_registered && (
-                <>
-                  <div className="flex justify-between text-[9px]">
-                    <span>Taxable Value:</span>
-                    <span>₹{Number(invoice.taxable_amount).toFixed(2)}</span>
-                  </div>
-                  {invoice.is_interstate ? (
-                    <div className="flex justify-between text-[9px]">
-                      <span>IGST:</span>
-                      <span>₹{Number(invoice.igst_amount).toFixed(2)}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-[9px]">
-                        <span>CGST:</span>
-                        <span>₹{Number(invoice.cgst_amount).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-[9px]">
-                        <span>SGST:</span>
-                        <span>₹{Number(invoice.sgst_amount).toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                </>
               )}
               {Number(invoice.round_off) !== 0 && (
                 <div className="flex justify-between text-[9px]">
@@ -214,6 +195,43 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({ invoic
                 <span>TOTAL PAYABLE:</span>
                 <span className="text-sm">₹{Number(invoice.grand_total).toFixed(2)}</span>
               </div>
+              <div className="text-[9px] text-gray-600 text-center italic">
+                (Price inclusive of all taxes / GST)
+              </div>
+
+              {/* GST Breakdown (Segregated below Total so it does not confuse the bill addition) */}
+              {store.is_gst_registered && Number(invoice.tax_total) > 0 && (
+                <div className="pt-1.5 mt-1 border-t border-dotted border-gray-400 text-[9px] text-gray-700 space-y-0.5">
+                  <div className="text-center font-bold text-[9px] text-black">
+                    -- GST Breakdown (Included in Total) --
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Taxable Value:</span>
+                    <span>₹{Number(invoice.taxable_amount).toFixed(2)}</span>
+                  </div>
+                  {invoice.is_interstate ? (
+                    <div className="flex justify-between">
+                      <span>IGST:</span>
+                      <span>₹{Number(invoice.igst_amount).toFixed(2)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span>CGST:</span>
+                        <span>₹{Number(invoice.cgst_amount).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>SGST:</span>
+                        <span>₹{Number(invoice.sgst_amount).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Tax:</span>
+                    <span>₹{Number(invoice.tax_total).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Payments */}

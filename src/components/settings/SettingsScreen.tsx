@@ -218,12 +218,12 @@ export const SettingsScreen: React.FC = () => {
             <div>
               <label className="block font-bold text-[#776C70] uppercase mb-1">Tax Calculation Mode</label>
               <select
-                value={formData.tax_calculation_mode || 'exclusive'}
+                value={formData.tax_calculation_mode || 'inclusive'}
                 onChange={(e) => handleChange('tax_calculation_mode', e.target.value)}
                 className="w-full p-2 bg-[#F8F5F0] border rounded-lg font-semibold"
               >
-                <option value="exclusive">Exclusive (Tax added on top of bill subtotal)</option>
                 <option value="inclusive">Inclusive (Prices include GST, reverse-calculated)</option>
+                <option value="exclusive">Exclusive (Tax added on top of bill subtotal)</option>
               </select>
             </div>
           </div>

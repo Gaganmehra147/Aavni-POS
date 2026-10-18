@@ -2,6 +2,9 @@ import { createClient, Client, Transaction } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,8 +17,12 @@ if (!fs.existsSync(dataDir)) {
 
 export const dbPath = path.join(dataDir, 'aavni_pos.sqlite');
 
+const dbUrl = process.env.DATABASE_URL || `file:${dbPath}`;
+const dbAuthToken = process.env.DATABASE_AUTH_TOKEN || undefined;
+
 export const client: Client = createClient({
-  url: `file:${dbPath}`
+  url: dbUrl,
+  authToken: dbAuthToken
 });
 
 // Helper functions for clean async/await SQLite operations

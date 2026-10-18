@@ -226,17 +226,34 @@ export const A4InvoiceModal: React.FC<A4InvoiceModalProps> = ({ invoiceId, onClo
               {/* Right Column: Totals Breakup */}
               <div className="p-4 bg-[#F8F5F0] rounded-lg border border-[#E9DFE2] space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-[#776C70]">Subtotal:</span>
+                  <span className="text-[#776C70]">Subtotal (Gross):</span>
                   <span className="font-mono font-semibold">{formatINR(invoice.subtotal)}</span>
                 </div>
-                {invoice.discount_total > 0 && (
-                  <div className="flex justify-between text-[#28794B]">
+                {Number(invoice.discount_total) > 0 && (
+                  <div className="flex justify-between text-[#28794B] font-semibold">
                     <span>Discount:</span>
                     <span className="font-mono">- {formatINR(invoice.discount_total)}</span>
                   </div>
                 )}
-                {isGstRegistered && (
-                  <>
+                {Number(invoice.round_off) !== 0 && (
+                  <div className="flex justify-between text-[#776C70]">
+                    <span>Round Off:</span>
+                    <span className="font-mono">{invoice.round_off > 0 ? `+${invoice.round_off}` : invoice.round_off}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t-2 border-[#681C32] flex justify-between items-center text-sm font-bold text-[#681C32]">
+                  <span>GRAND TOTAL:</span>
+                  <span className="text-xl font-mono">{formatINR(invoice.grand_total)}</span>
+                </div>
+                <div className="text-[10px] text-center text-[#776C70] italic">
+                  (Prices are inclusive of all GST taxes)
+                </div>
+
+                {isGstRegistered && Number(invoice.tax_total) > 0 && (
+                  <div className="pt-2 mt-2 border-t border-[#E9DFE2] space-y-1 text-[11px]">
+                    <div className="text-[10px] font-bold text-[#30262A] uppercase tracking-wider">
+                      Tax Breakdown (Included in Grand Total):
+                    </div>
                     <div className="flex justify-between text-[#776C70]">
                       <span>Taxable Value:</span>
                       <span className="font-mono">{formatINR(invoice.taxable_amount)}</span>
@@ -258,18 +275,12 @@ export const A4InvoiceModal: React.FC<A4InvoiceModalProps> = ({ invoiceId, onClo
                         </div>
                       </>
                     )}
-                  </>
-                )}
-                {invoice.round_off !== 0 && (
-                  <div className="flex justify-between text-[#776C70]">
-                    <span>Round Off:</span>
-                    <span className="font-mono">{invoice.round_off > 0 ? `+${invoice.round_off}` : invoice.round_off}</span>
+                    <div className="flex justify-between font-semibold text-[#30262A]">
+                      <span>Total GST:</span>
+                      <span className="font-mono">{formatINR(invoice.tax_total)}</span>
+                    </div>
                   </div>
                 )}
-                <div className="pt-2 border-t-2 border-[#681C32] flex justify-between items-center text-sm font-bold text-[#681C32]">
-                  <span>GRAND TOTAL:</span>
-                  <span className="text-xl font-mono">{formatINR(invoice.grand_total)}</span>
-                </div>
               </div>
             </div>
 

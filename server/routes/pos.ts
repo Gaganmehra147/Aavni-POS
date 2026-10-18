@@ -85,14 +85,10 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
       const isGstRegistered = Boolean(settings.is_gst_registered && settings.gstin);
       const isInterstate = isGstRegistered && (customer_state_code !== storeStateCode);
 
+      // 1. First pass: Validate items, fetch variants and stock, compute base totals
       let calculatedSubtotal = 0;
-      let calculatedTaxable = 0;
-      let calculatedCgst = 0;
-      let calculatedSgst = 0;
-      let calculatedIgst = 0;
-      let calculatedTaxTotal = 0;
-
-      const validatedItems: any[] = [];
+      let totalItemDiscounts = 0;
+      const fetchedItems: any[] = [];
 
       for (const item of items) {
         const v = (await tx.execute({
@@ -120,9 +116,36 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
 
         const unitPrice = Number(item.unit_price !== undefined ? item.unit_price : v.selling_price);
         const itemDiscount = Number(item.discount_amount || 0);
-        const lineSubtotal = Math.max(0, (unitPrice * qty) - itemDiscount);
 
-        let taxableAmount = lineSubtotal;
+        calculatedSubtotal += (unitPrice * qty);
+        totalItemDiscounts += itemDiscount;
+
+        fetchedItems.push({ item, v, qty, unitPrice, itemDiscount });
+      }
+
+      const totalBillDiscount = Number(discount_total) || 0;
+      const extraBillDiscount = Math.max(0, totalBillDiscount - totalItemDiscounts);
+      const remainingBase = Math.max(1, calculatedSubtotal - totalItemDiscounts);
+
+      let calculatedTaxable = 0;
+      let calculatedCgst = 0;
+      let calculatedSgst = 0;
+      let calculatedIgst = 0;
+      let calculatedTaxTotal = 0;
+
+      const validatedItems: any[] = [];
+
+      for (const entry of fetchedItems) {
+        const { v, qty, unitPrice, itemDiscount, item } = entry;
+        const itemGross = unitPrice * qty;
+
+        // Allocate bill-level discount proportionally across items
+        const allocatedBillDiscount = (calculatedSubtotal - totalItemDiscounts) > 0
+          ? (extraBillDiscount * (itemGross - itemDiscount)) / remainingBase
+          : 0;
+        const effectiveNet = Math.max(0, itemGross - itemDiscount - allocatedBillDiscount);
+
+        let taxableAmount = effectiveNet;
         let cgstRate = 0;
         let cgstAmount = 0;
         let sgstRate = 0;
@@ -135,10 +158,10 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
 
         if (isGstRegistered && gstRate > 0) {
           if (settings.tax_calculation_mode === 'inclusive') {
-            taxableAmount = Number((lineSubtotal / (1 + (gstRate / 100))).toFixed(2));
-            lineTax = Number((lineSubtotal - taxableAmount).toFixed(2));
+            taxableAmount = Number((effectiveNet / (1 + (gstRate / 100))).toFixed(2));
+            lineTax = Number((effectiveNet - taxableAmount).toFixed(2));
           } else {
-            taxableAmount = Number(lineSubtotal.toFixed(2));
+            taxableAmount = Number(effectiveNet.toFixed(2));
             lineTax = Number(((taxableAmount * gstRate) / 100).toFixed(2));
           }
 
@@ -153,11 +176,11 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
           }
         }
 
+        const totalItemDiscount = Number((itemDiscount + allocatedBillDiscount).toFixed(2));
         const lineTotal = settings.tax_calculation_mode === 'inclusive'
-          ? lineSubtotal
+          ? Number(effectiveNet.toFixed(2))
           : Number((taxableAmount + lineTax).toFixed(2));
 
-        calculatedSubtotal += (unitPrice * qty);
         calculatedTaxable += taxableAmount;
         calculatedCgst += cgstAmount;
         calculatedSgst += sgstAmount;
@@ -169,7 +192,7 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
           quantity: qty,
           unitPrice,
           costPrice: v.purchase_cost,
-          discountAmount: itemDiscount,
+          discountAmount: totalItemDiscount,
           taxableAmount,
           gstRate,
           cgstRate,
@@ -183,12 +206,15 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
         });
       }
 
-      const billDiscount = Number(discount_total) || 0;
-      const finalTaxable = Math.max(0, calculatedTaxable - (settings.tax_calculation_mode === 'exclusive' ? billDiscount : 0));
+      calculatedTaxable = Number(calculatedTaxable.toFixed(2));
+      calculatedCgst = Number(calculatedCgst.toFixed(2));
+      calculatedSgst = Number(calculatedSgst.toFixed(2));
+      calculatedIgst = Number(calculatedIgst.toFixed(2));
+      calculatedTaxTotal = Number(calculatedTaxTotal.toFixed(2));
 
       let unroundedGrandTotal = (settings.tax_calculation_mode === 'inclusive')
-        ? Math.max(0, calculatedSubtotal - billDiscount)
-        : Math.max(0, calculatedTaxable + calculatedTaxTotal - billDiscount);
+        ? Math.max(0, calculatedSubtotal - totalBillDiscount)
+        : Math.max(0, calculatedTaxable + calculatedTaxTotal);
 
       const roundedGrandTotal = Math.round(unroundedGrandTotal);
       const roundOff = Number((roundedGrandTotal - unroundedGrandTotal).toFixed(2));
@@ -237,8 +263,8 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
           invoiceType,
           isInterstate ? 1 : 0,
           calculatedSubtotal,
-          billDiscount,
-          finalTaxable,
+          totalBillDiscount,
+          calculatedTaxable,
           calculatedCgst,
           calculatedSgst,
           calculatedIgst,

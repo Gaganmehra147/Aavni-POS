@@ -225,31 +225,40 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
   const totalDiscounts = itemsDiscountTotal + billLevelDiscount;
 
   const isGstConfigured = Boolean(settings?.is_gst_registered && settings?.gstin);
-  const taxMode = settings?.tax_calculation_mode || 'exclusive';
+  const taxMode = settings?.tax_calculation_mode || 'inclusive';
+
+  const netPayablePreTax = Math.max(0, subtotal - totalDiscounts);
+  const remainingBase = Math.max(1, subtotal - itemsDiscountTotal);
 
   let taxableTotal = 0;
   let taxTotal = 0;
 
   for (const item of cartItems) {
-    const lineSub = Math.max(0, (item.unit_price * item.quantity) - item.discount_amount);
+    const itemGross = item.unit_price * item.quantity;
+    const itemDisc = item.discount_amount || 0;
+    const allocatedBillDiscount = (subtotal - itemsDiscountTotal) > 0
+      ? (billLevelDiscount * (itemGross - itemDisc)) / remainingBase
+      : 0;
+    const effectiveNet = Math.max(0, itemGross - itemDisc - allocatedBillDiscount);
     const rate = isGstConfigured ? item.gst_rate : 0;
+
     if (rate > 0) {
       if (taxMode === 'inclusive') {
-        const taxable = lineSub / (1 + rate / 100);
+        const taxable = effectiveNet / (1 + rate / 100);
         taxableTotal += taxable;
-        taxTotal += (lineSub - taxable);
+        taxTotal += (effectiveNet - taxable);
       } else {
-        taxableTotal += lineSub;
-        taxTotal += (lineSub * rate) / 100;
+        taxableTotal += effectiveNet;
+        taxTotal += (effectiveNet * rate) / 100;
       }
     } else {
-      taxableTotal += lineSub;
+      taxableTotal += effectiveNet;
     }
   }
 
   const unroundedTotal = taxMode === 'inclusive'
-    ? Math.max(0, subtotal - totalDiscounts)
-    : Math.max(0, taxableTotal + taxTotal - billLevelDiscount);
+    ? netPayablePreTax
+    : Math.max(0, taxableTotal + taxTotal);
 
   const grandTotal = Math.round(unroundedTotal);
   const roundOff = Number((grandTotal - unroundedTotal).toFixed(2));
@@ -741,7 +750,7 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
             )}
             {isGstConfigured && (
               <div className="flex justify-between text-[11px]">
-                <span>GST Tax Breakdown:</span>
+                <span>{taxMode === 'inclusive' ? 'Included GST (Tax):' : 'GST Tax Breakdown:'}</span>
                 <span className="font-mono">{formatINR(taxTotal)}</span>
               </div>
             )}
