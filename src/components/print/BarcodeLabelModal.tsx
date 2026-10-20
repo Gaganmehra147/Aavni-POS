@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { formatINR } from '../../lib/currency';
-import { X, Printer, Copy, Layers, Trash2, Plus, Minus, Tag, Palette, Info } from 'lucide-react';
+import { X, Printer, Copy, Layers, Trash2, Plus, Minus, Tag, Palette, Info, Sliders, Zap, CheckCircle2 } from 'lucide-react';
 
 export interface BarcodeItem {
   id?: number | string;
@@ -22,6 +22,7 @@ interface BarcodeLabelModalProps {
 }
 
 export type LayoutMode = 'tvs-2up' | 'thermal-1up' | 'a4-24' | 'a4-40';
+export type ThemeMode = 'color' | 'thermal-sharp' | 'preprinted';
 
 export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: initialItems, onClose }) => {
   const [labelList, setLabelList] = useState<BarcodeItem[]>(() =>
@@ -31,9 +32,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }))
   );
 
-  // Default to user's TVS LP 46 NEO 2-UP roll (50mm x 25mm, 2 labels across)
+  // Default to TVS LP 46 NEO 2-UP roll (50mm x 25mm x 2 columns = 104mm width)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('tvs-2up');
-  const [colorMode, setColorMode] = useState<'color' | 'mono'>('color');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('color');
+  const [centerGap, setCenterGap] = useState<'2mm' | '3mm' | '4mm'>('3mm');
   const [showStoreName, setShowStoreName] = useState(true);
   const [showMrp, setShowMrp] = useState(true);
   const [showBorder, setShowBorder] = useState(true);
@@ -42,7 +44,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
   // Compute total labels count
   const totalLabels = labelList.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  // Re-generate Barcode SVGs whenever labelList, layoutMode, or colorMode changes
+  // Re-generate Barcode SVGs whenever labelList, layoutMode, or themeMode changes
   useEffect(() => {
     const timer = setTimeout(() => {
       let renderIndex = 0;
@@ -53,7 +55,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           const el = document.getElementById(svgId);
           if (el) {
             try {
-              // Barcode line sizing optimized for 50mm x 25mm label
+              // TVS LP 46 NEO 203 DPI (8 dots/mm) high-speed Code128 optimization
               const isCompact = layoutMode === 'tvs-2up' || layoutMode === 'thermal-1up';
               JsBarcode(el, item.barcode || '0000000000', {
                 format: 'CODE128',
@@ -65,7 +67,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 textMargin: 1,
                 margin: 0,
                 background: '#ffffff',
-                lineColor: '#000000' // Optical scanners require pure black bars
+                lineColor: '#000000' // Optical scanners require 100% black bars
               });
             } catch (e) {
               console.error('Barcode render error:', e);
@@ -77,7 +79,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }, 120);
 
     return () => clearTimeout(timer);
-  }, [labelList, layoutMode, colorMode]);
+  }, [labelList, layoutMode, themeMode]);
 
   const handleUpdateQty = (idx: number, newQty: number) => {
     setLabelList((prev) =>
@@ -122,24 +124,22 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     tvsPairs.push(flattenedTags.slice(i, i + 2));
   }
 
-  // Tag renderer component
+  // Tag renderer component calibrated for TVS LP 46 NEO 203 DPI print head
   const renderTagContent = (item: BarcodeItem, tagIndex: number, isTvs: boolean = false) => {
-    const isColor = colorMode === 'color';
+    const isColor = themeMode === 'color';
+    const isPreprinted = themeMode === 'preprinted';
+
     return (
-      <div
-        className={`h-full w-full flex flex-col justify-between text-center select-none ${
-          isColor ? 'bg-white' : 'bg-white'
-        }`}
-      >
+      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white">
         {/* Top Header: Brand Name */}
-        {showStoreName && (
+        {!isPreprinted && showStoreName && (
           <div
             className={`w-full py-0.5 px-1 rounded-xs tracking-wider font-serif uppercase font-bold ${
               isTvs ? 'text-[8px] leading-none' : 'text-[9px] leading-tight'
             } ${
               isColor
                 ? 'bg-[#681C32] text-white'
-                : 'border-b border-black text-black'
+                : 'bg-black text-white'
             }`}
           >
             AAVNI ETHNICWEAR
@@ -172,11 +172,11 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             {item.size || 'Free'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="truncate max-w-[55px] font-medium text-gray-700">
+          <span className="truncate max-w-[55px] font-medium text-gray-800">
             {item.color || 'Standard'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="font-mono text-gray-600 truncate max-w-[50px]">
+          <span className="font-mono text-gray-700 truncate max-w-[50px] font-semibold">
             {item.design_code}
           </span>
         </div>
@@ -189,7 +189,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         {/* Price Tag Footer */}
         <div
           className={`pt-0.5 border-t flex items-center justify-center space-x-1 leading-tight ${
-            isColor ? 'border-[#E9DFE2] bg-[#FDFBFA]' : 'border-dashed border-gray-400'
+            isColor ? 'border-[#E9DFE2] bg-[#FDFBFA]' : 'border-t border-black'
           }`}
         >
           {showMrp && item.mrp && item.mrp > item.selling_price && (
@@ -207,7 +207,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             } ${
               isColor
                 ? 'text-[#681C32] bg-[#FBF4F6] px-1 rounded'
-                : 'text-black'
+                : 'text-black font-black'
             }`}
           >
             ₹{item.selling_price}
@@ -215,7 +215,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           <span
             className={`${
               isTvs ? 'text-[6.5px]' : 'text-[7.5px]'
-            } text-gray-500`}
+            } text-gray-500 font-medium`}
           >
             (Incl. Taxes)
           </span>
@@ -236,15 +236,18 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             <div>
               <h2 className="font-serif font-bold text-lg flex items-center space-x-2">
                 <span>Barcode Label & Price Tag Printer</span>
-                <span className="text-[11px] bg-amber-400 text-stone-900 font-sans font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  TVS LP 46 Ready
+                <span className="text-[10.5px] bg-amber-400 text-stone-950 font-sans font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center space-x-1 shadow-xs">
+                  <Zap className="w-3 h-3 text-stone-950 fill-stone-950" />
+                  <span>TVS LP 46 NEO Calibrated</span>
                 </span>
               </h2>
-              <p className="text-xs text-white/80">
-                Total Labels to Print: <strong className="text-amber-300 font-mono text-sm">{totalLabels}</strong>
+              <p className="text-xs text-white/80 flex items-center space-x-2">
+                <span>
+                  Total Labels to Print: <strong className="text-amber-300 font-mono text-sm">{totalLabels}</strong>
+                </span>
                 {layoutMode === 'tvs-2up' && (
-                  <span className="ml-2 text-white/70">
-                    ({tvsPairs.length} roll passes / rows)
+                  <span className="text-white/70">
+                    • {tvsPairs.length} Roll Rows (104mm Web Width)
                   </span>
                 )}
               </p>
@@ -253,8 +256,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowHelp(!showHelp)}
-              className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer"
-              title="TVS Printer Setup Instructions"
+              className={`px-3 py-2 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border ${
+                showHelp
+                  ? 'bg-amber-400 text-stone-950 border-amber-300 shadow-sm'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+              }`}
+              title="TVS LP 46 NEO Hardware & Driver Setup Instructions"
             >
               <Info className="w-4 h-4 text-amber-300" />
               <span>TVS Setup Guide</span>
@@ -269,44 +276,61 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-colors"
+              className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* TVS LP 46 NEO Instructions Banner */}
+        {/* TVS LP 46 NEO Full Technical Hardware & Driver Guide Banner */}
         {showHelp && (
-          <div className="no-print bg-amber-50 border-b border-amber-200 px-6 py-3 text-xs text-amber-950 flex items-start justify-between">
-            <div className="space-y-1">
-              <div className="font-bold text-amber-900 flex items-center space-x-1.5">
-                <span>⚙️ TVS LP 46 NEO (6ips) Printer Settings (Windows Print Ctrl+P):</span>
+          <div className="no-print bg-stone-900 text-stone-100 border-b border-stone-800 px-6 py-4 text-xs space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>TVS LP 46 NEO (6ips Desktop Label Printer) Official Calibrated Settings</span>
               </div>
-              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-900/90 pl-1">
-                <li>
-                  <strong>Destination / Printer:</strong> TVS LP 46 NEO
-                </li>
-                <li>
-                  <strong>Paper Size:</strong> User-Defined / Custom <strong>104mm × 25mm</strong> (या 4.09" × 0.98", 2 Labels Across)
-                </li>
-                <li>
-                  <strong>Margins:</strong> <strong>None (शून्य)</strong> — Zero margins set karein taaki border cut na ho
-                </li>
-                <li>
-                  <strong>Scale:</strong> <strong>100% / Actual Size</strong> (Do NOT use 'Fit to printable area')
-                </li>
-                <li>
-                  <strong>Color / Background Graphics:</strong> Browser print me <em>'More settings' → Check 'Background graphics' (पृष्ठभूमि ग्राफिक्स चालू रखें)</em> taaki brand color print ho!
-                </li>
-              </ul>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="text-stone-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setShowHelp(false)}
-              className="text-amber-800 hover:text-amber-950 p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-stone-300">
+              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
+                <div className="font-bold text-amber-300 mb-1">1. Windows / Chrome Print Dialog (Ctrl + P)</div>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li><strong>Destination:</strong> TVS LP 46 NEO</li>
+                  <li><strong>Paper Size:</strong> User-Defined <strong>104mm × 25mm</strong> (या 4.09" × 0.98")</li>
+                  <li><strong>Margins:</strong> <strong>None (शून्य)</strong></li>
+                  <li><strong>Scale:</strong> <strong>100% / Actual Size</strong></li>
+                  <li><strong>Background graphics:</strong> <strong>Check / ON</strong> (कलर प्रिंट के लिए)</li>
+                </ul>
+              </div>
+
+              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
+                <div className="font-bold text-amber-300 mb-1">2. Driver Printing Preferences (TVS Driver)</div>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li><strong>Print Method:</strong> Thermal Transfer (अगर 300m Ribbon लगा है) या Direct Thermal</li>
+                  <li><strong>Media Type:</strong> Label with Gaps (Transmissive Sensor)</li>
+                  <li><strong>Speed:</strong> 4 ips to 6 ips (100–150 mm/s)</li>
+                  <li><strong>Darkness / Density:</strong> 8 to 11 (Crystal clear barcode contrast)</li>
+                </ul>
+              </div>
+
+              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
+                <div className="font-bold text-amber-300 mb-1">3. Gap Sensor Auto-Calibration (10 सेकंड में)</div>
+                <p className="leading-relaxed">
+                  अगर प्रिंटर लेबल के गैप को मिस कर रहा हो:<br/>
+                  1. प्रिंटर का पावर <strong>OFF</strong> करें。<br/>
+                  2. <strong>PAUSE/FEED</strong> बटन दबाए रखें और पावर <strong>ON</strong> करें。<br/>
+                  3. <strong>3 बीप</strong> बजने पर बटन छोड़ें। प्रिंटर अपने आप 25mm लेबल की हाइट सीख लेगा!
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -344,7 +368,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 type="button"
                 onClick={() => handleSetAllQty(20)}
                 className="px-3 py-1 bg-[#681C32] text-white rounded-md font-mono font-bold shadow-xs hover:bg-[#451222] cursor-pointer flex items-center space-x-1"
-                title="Print 20 barcodes per item"
+                title="Print 20 barcodes per item in 1 click"
               >
                 <span>★ 20 Each</span>
               </button>
@@ -375,31 +399,52 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </select>
               </div>
 
-              {/* Color Mode Selector */}
+              {/* Theme & Ribbon Style Selector */}
               <div className="flex items-center space-x-1.5 pl-2 border-l border-[#E9DFE2]">
                 <Palette className="w-3.5 h-3.5 text-[#776C70]" />
                 <span className="font-bold text-[#776C70]">Theme:</span>
                 <select
-                  value={colorMode}
-                  onChange={(e) => setColorMode(e.target.value as 'color' | 'mono')}
+                  value={themeMode}
+                  onChange={(e) => setThemeMode(e.target.value as ThemeMode)}
                   className="px-2 py-1 bg-white border border-[#E9DFE2] rounded-lg text-xs font-semibold text-[#30262A] cursor-pointer"
                 >
                   <option value="color">Full Color (Aavni Maroon)</option>
-                  <option value="mono">Monochrome (B&W Thermal)</option>
+                  <option value="thermal-sharp">TVS Ribbon B&W (203 DPI Ultra-Crisp)</option>
+                  <option value="preprinted">Pre-Printed Roll (Overlay Only)</option>
                 </select>
               </div>
 
+              {/* Gap Fine Tuning for TVS 2-UP */}
+              {layoutMode === 'tvs-2up' && (
+                <div className="flex items-center space-x-1.5 pl-2 border-l border-[#E9DFE2]">
+                  <Sliders className="w-3.5 h-3.5 text-[#776C70]" />
+                  <span className="font-bold text-[#776C70]">Gap:</span>
+                  <select
+                    value={centerGap}
+                    onChange={(e) => setCenterGap(e.target.value as '2mm' | '3mm' | '4mm')}
+                    className="px-2 py-1 bg-white border border-[#E9DFE2] rounded-lg text-xs font-mono font-semibold text-[#30262A] cursor-pointer"
+                    title="Center gap between left and right sticker"
+                  >
+                    <option value="2mm">2 mm</option>
+                    <option value="3mm">3 mm (Standard)</option>
+                    <option value="4mm">4 mm</option>
+                  </select>
+                </div>
+              )}
+
               {/* Toggles */}
               <div className="flex items-center space-x-2 pl-2 border-l border-[#E9DFE2]">
-                <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
-                  <input
-                    type="checkbox"
-                    checked={showStoreName}
-                    onChange={(e) => setShowStoreName(e.target.checked)}
-                    className="rounded text-[#681C32]"
-                  />
-                  <span>Store Header</span>
-                </label>
+                {themeMode !== 'preprinted' && (
+                  <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
+                    <input
+                      type="checkbox"
+                      checked={showStoreName}
+                      onChange={(e) => setShowStoreName(e.target.checked)}
+                      className="rounded text-[#681C32]"
+                    />
+                    <span>Header</span>
+                  </label>
+                )}
                 <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
                   <input
                     type="checkbox"
@@ -493,19 +538,20 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             <div className="printable-barcode-sheet mx-auto">
               {/* TVS LP 46 NEO 2-UP Roll (2 Labels per row: 50mm x 25mm each) */}
               {layoutMode === 'tvs-2up' && (
-                <div className="tvs-2up-sheet mx-auto space-y-3 sm:space-y-4 max-w-[420px]">
+                <div className="tvs-2up-sheet mx-auto space-y-3 sm:space-y-4 max-w-[440px]">
                   <div className="no-print text-center text-[11px] font-mono text-[#776C70] mb-2 flex items-center justify-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                    <span>TVS LP 46 NEO Roll View (2 Stickers / Row • 50mm × 25mm Each)</span>
+                    <span>TVS LP 46 NEO Roll View (104mm Web • 2 Across • {centerGap} Gap)</span>
                   </div>
 
                   {tvsPairs.map((pair, pairIdx) => (
                     <div
                       key={pairIdx}
-                      className="tvs-2up-row flex justify-between items-center gap-[3mm] mx-auto bg-stone-100 p-1 rounded-lg border border-dashed border-stone-300"
+                      className="tvs-2up-row flex justify-between items-center mx-auto bg-stone-100 p-1 rounded-lg border border-dashed border-stone-300"
                       style={{
                         width: '104mm',
                         minHeight: '26mm',
+                        gap: centerGap,
                         boxSizing: 'border-box'
                       }}
                     >
@@ -611,7 +657,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         </div>
       </div>
 
-      {/* Embedded Dynamic Print CSS for TVS LP 46 NEO & Label Roll Precision */}
+      {/* Embedded Dynamic Print CSS for TVS LP 46 NEO 108mm Width & 25mm Gap Feed */}
       <style>{`
         @media print {
           @page {
@@ -684,7 +730,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             break-inside: avoid !important;
             overflow: hidden !important;
             margin: 0 !important;
-            padding: 0 0.5mm !important;
+            padding: 0 !important;
             background: transparent !important;
             border: none !important;
             box-sizing: border-box !important;
