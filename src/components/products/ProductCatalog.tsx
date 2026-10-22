@@ -12,6 +12,7 @@ import {
   Download,
   Barcode,
   Edit,
+  Trash2,
   ChevronDown,
   ChevronRight,
   AlertTriangle,
@@ -135,6 +136,33 @@ export const ProductCatalog: React.FC = () => {
     );
 
     setLabelItems(items);
+  };
+
+  const handleDeleteProduct = async (prod: Product) => {
+    if (!window.confirm(`Are you sure you want to delete "${prod.name}" (${prod.design_code})?\nThis product and its ${prod.variants.length} variant(s) will be removed from the catalog.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/products/${prod.id}`);
+      setSelectedProductIds((prev) => prev.filter((id) => id !== prod.id));
+      fetchCatalog();
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message || 'Failed to delete product');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedProductIds.length} selected product(s)?\nThis will remove them from the catalog and POS search.`)) {
+      return;
+    }
+    try {
+      await api.post('/products/bulk-delete', { ids: selectedProductIds });
+      setSelectedProductIds([]);
+      fetchCatalog();
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message || 'Failed to bulk delete products');
+    }
   };
 
   // Export CSV
@@ -296,14 +324,25 @@ export const ProductCatalog: React.FC = () => {
               </label>
 
               {selectedProductIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handlePrintBulkBarcodes}
-                  className="px-3 py-1 bg-[#681C32] hover:bg-[#451222] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
-                >
-                  <Barcode className="w-3.5 h-3.5" />
-                  <span>Print Barcodes for {selectedProductIds.length} Selected</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handlePrintBulkBarcodes}
+                    className="px-3 py-1 bg-[#681C32] hover:bg-[#451222] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+                  >
+                    <Barcode className="w-3.5 h-3.5" />
+                    <span>Print Barcodes ({selectedProductIds.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBulkDelete}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+                    title="Delete all selected products"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete ({selectedProductIds.length})</span>
+                  </button>
+                </div>
               )}
             </div>
 
@@ -376,7 +415,7 @@ export const ProductCatalog: React.FC = () => {
                           type="button"
                           onClick={() => handlePrintLabelsForProduct(prod)}
                           title="Print Barcode Labels"
-                          className="p-2 border border-[#E9DFE2] hover:bg-[#F6EBF0] hover:border-[#681C32] rounded-lg text-[#776C70] hover:text-[#681C32] transition-colors"
+                          className="p-2 border border-[#E9DFE2] hover:bg-[#F6EBF0] hover:border-[#681C32] rounded-lg text-[#776C70] hover:text-[#681C32] transition-colors cursor-pointer"
                         >
                           <Barcode className="w-4 h-4" />
                         </button>
@@ -387,9 +426,17 @@ export const ProductCatalog: React.FC = () => {
                             setShowProductModal(true);
                           }}
                           title="Edit Product"
-                          className="p-2 border border-[#E9DFE2] hover:bg-[#F6EBF0] hover:border-[#681C32] rounded-lg text-[#776C70] hover:text-[#681C32] transition-colors"
+                          className="p-2 border border-[#E9DFE2] hover:bg-[#F6EBF0] hover:border-[#681C32] rounded-lg text-[#776C70] hover:text-[#681C32] transition-colors cursor-pointer"
                         >
                           <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProduct(prod)}
+                          title="Delete Product"
+                          className="p-2 border border-[#E9DFE2] hover:bg-red-50 hover:border-red-300 rounded-lg text-[#776C70] hover:text-red-600 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>

@@ -49,6 +49,23 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!product?.id) return;
+    if (!window.confirm(`Are you sure you want to delete "${product.name}"? This product and its variants will be removed.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.delete(`/products/${product.id}`);
+      onSuccess();
+    } catch (err: any) {
+      alert(err.response?.data?.error || err.message || 'Failed to delete product');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Auto-generate SKU & Barcode for variants
   const generateCodes = (idx: number, size: string, color: string) => {
@@ -460,22 +477,36 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-[#E9DFE2]">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#E9DFE2] text-xs font-semibold text-[#776C70] rounded-lg hover:bg-[#F8F5F0]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2.5 bg-[#681C32] hover:bg-[#451222] text-white font-semibold rounded-lg text-xs shadow-sm transition-all"
-            >
-              {submitting ? 'Saving...' : isEditing ? 'Update Product' : 'Create Product Master'}
-            </button>
+          <div className="flex items-center justify-between pt-4 border-t border-[#E9DFE2]">
+            {isEditing ? (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={submitting || deleting}
+                className="px-4 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold rounded-lg flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{deleting ? 'Deleting...' : 'Delete Product'}</span>
+              </button>
+            ) : <div />}
+
+            <div className="flex items-center space-x-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting || deleting}
+                className="px-4 py-2 border border-[#E9DFE2] text-xs font-semibold text-[#776C70] rounded-lg hover:bg-[#F8F5F0] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || deleting}
+                className="px-6 py-2.5 bg-[#681C32] hover:bg-[#451222] text-white font-semibold rounded-lg text-xs shadow-sm transition-all cursor-pointer"
+              >
+                {submitting ? 'Saving...' : isEditing ? 'Update Product' : 'Create Product Master'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

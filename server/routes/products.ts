@@ -361,20 +361,61 @@ router.put('/:id', requireAuth, requireRole('admin', 'manager'), async (req: Req
   }
 });
 
-// Soft-archive product
-router.delete('/:id', requireAuth, requireRole('admin'), async (req: Request, res: Response) => {
+// Delete / Soft-archive product
+router.delete('/:id', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid product ID' });
+
+    const prod = await queryOne('SELECT name FROM products WHERE id = ?', [id]);
+    if (!prod) return res.status(404).json({ error: 'Product not found' });
+
     await run('UPDATE products SET is_active = 0 WHERE id = ?', [id]);
     await run('UPDATE product_variants SET is_active = 0 WHERE product_id = ?', [id]);
 
     await run(
       `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
-       VALUES (?, 'ARCHIVE_PRODUCT', 'product', ?, 'Archived product')`,
-      [req.user!.id, String(id)]
+       VALUES (?, 'ARCHIVE_PRODUCT', 'product', ?, ?)`,
+      [req.user!.id, String(id), `Deleted/Archived product ${prod.name}`]
     );
 
-    res.json({ message: 'Product archived successfully' });
+    res.json({ message: 'Product deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk Delete products
+router.post('/bulk-delete', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+
+    await withTransaction(async (tx) => {
+      for (const rawId of ids) {
+        const id = parseInt(rawId, 10);
+        if (!isNaN(id)) {
+          await tx.execute({
+            sql: 'UPDATE products SET is_active = 0 WHERE id = ?',
+            args: [id]
+          });
+          await tx.execute({
+            sql: 'UPDATE product_variants SET is_active = 0 WHERE product_id = ?',
+            args: [id]
+          });
+        }
+      }
+
+      await tx.execute({
+        sql: `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+              VALUES (?, 'BULK_DELETE_PRODUCTS', 'product', ?, ?)`,
+        args: [req.user!.id, ids.join(','), `Bulk deleted ${ids.length} products`]
+      });
+    });
+
+    res.json({ message: `Successfully deleted ${ids.length} products` });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
