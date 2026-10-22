@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Eye,
   RefreshCw,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 
 export interface BarcodeItem {
@@ -39,31 +40,29 @@ interface BarcodeLabelModalProps {
   onClose: () => void;
 }
 
-export type ThemeMode = 'color' | 'thermal-sharp' | 'preprinted';
-
 // Storage key for persisting calibrated dimensions
-const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v3_confirmed';
+const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v4_simple_sharp';
 
 export interface LabelDimensions {
-  rollWidth: number;      // e.g. 80 (in mm total media width)
-  labelWidth: number;     // e.g. 35 (in mm individual label width)
-  labelHeight: number;    // e.g. 25 (in mm individual label height)
+  rollWidth: number;      // e.g. 103.5 (in mm total media width)
+  labelWidth: number;     // e.g. 41 (in mm individual label width)
+  labelHeight: number;    // e.g. 23 (in mm individual label height)
   columns: number;        // e.g. 2 (columns across)
-  horizontalGap: number;  // e.g. 4 (in mm between columns)
-  leftMargin: number;     // e.g. 3 (in mm left side margin/offset)
-  verticalGap: number;    // e.g. 0 (in mm vertical gap between rows, reported 0mm / verify physically)
+  horizontalGap: number;  // e.g. 0 (in mm between columns)
+  leftMargin: number;     // e.g. 12 (in mm left side margin/offset)
+  verticalGap: number;    // e.g. 2.5 (in mm vertical gap between rows)
   topOffset: number;      // e.g. 0 (in mm top offset)
 }
 
-// Default initial values matching user's confirmed measurements
+// Default initial values matching user's confirmed measurements from image
 const DEFAULT_DIMENSIONS: LabelDimensions = {
-  rollWidth: 80,
-  labelWidth: 35,
-  labelHeight: 25,
+  rollWidth: 103.5,
+  labelWidth: 41,
+  labelHeight: 23,
   columns: 2,
-  horizontalGap: 4,
-  leftMargin: 3,
-  verticalGap: 0,
+  horizontalGap: 0,
+  leftMargin: 12,
+  verticalGap: 2.5,
   topOffset: 0
 };
 
@@ -75,7 +74,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }))
   );
 
-  // Load saved dimensions or initialize with 35x25mm / 80mm roll defaults
+  // Load saved dimensions or initialize with 103.5mm / 41x23mm defaults
   const [dims, setDims] = useState<LabelDimensions>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -92,9 +91,6 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
   // Settings & Toggles
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>('color');
-  const [showStoreName, setShowStoreName] = useState(true);
-  const [showMrp, setShowMrp] = useState(true);
   const [showBorder, setShowBorder] = useState(true);
 
   // Test Print mode (1 row only = columns labels)
@@ -113,16 +109,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     });
   };
 
-  const handleApplyPreset = (preset: 'tvs-80mm-35x25' | 'tvs-104mm-50x25' | 'tvs-single-50x25' | 'a4-sheet') => {
+  const handleApplyPreset = (preset: 'tvs-103.5mm-41x23' | 'tvs-80mm-35x25' | 'tvs-104mm-50x25' | 'tvs-single-50x25') => {
     let newDims: LabelDimensions;
-    if (preset === 'tvs-80mm-35x25') {
+    if (preset === 'tvs-103.5mm-41x23') {
+      newDims = { rollWidth: 103.5, labelWidth: 41, labelHeight: 23, columns: 2, horizontalGap: 0, leftMargin: 12, verticalGap: 2.5, topOffset: 0 };
+    } else if (preset === 'tvs-80mm-35x25') {
       newDims = { rollWidth: 80, labelWidth: 35, labelHeight: 25, columns: 2, horizontalGap: 4, leftMargin: 3, verticalGap: 0, topOffset: 0 };
     } else if (preset === 'tvs-104mm-50x25') {
       newDims = { rollWidth: 104, labelWidth: 50, labelHeight: 25, columns: 2, horizontalGap: 3, leftMargin: 0.5, verticalGap: 2.5, topOffset: 0 };
-    } else if (preset === 'tvs-single-50x25') {
-      newDims = { rollWidth: 50, labelWidth: 50, labelHeight: 25, columns: 1, horizontalGap: 0, leftMargin: 0, verticalGap: 2.5, topOffset: 0 };
     } else {
-      newDims = { rollWidth: 210, labelWidth: 65, labelHeight: 35, columns: 3, horizontalGap: 3, leftMargin: 5, verticalGap: 0, topOffset: 10 };
+      newDims = { rollWidth: 50, labelWidth: 50, labelHeight: 25, columns: 1, horizontalGap: 0, leftMargin: 0, verticalGap: 2.5, topOffset: 0 };
     }
     setDims(newDims);
     try {
@@ -140,14 +136,13 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
   const rightMargin = Number((dims.rollWidth - (dims.leftMargin + totalColumnsWidth)).toFixed(2));
   const isWidthExceeded = rightMargin < 0;
 
-  // Auto-calculated barcode scaling based on label size
+  // Auto-calculated compact barcode scaling for razor-sharp 203 DPI thermal print
   const barcodeScale = {
-    width: dims.labelWidth < 38 ? 0.88 : dims.labelWidth < 50 ? 1.0 : 1.2,
-    height: Math.max(14, Math.min(22, Math.round(dims.labelHeight * 0.65))),
-    fontSize: dims.labelWidth < 38 ? 7 : 8
+    width: 1, // Integer 1px module width prevents fractional antialiasing blur
+    height: Math.max(10, Math.min(13, Math.round(dims.labelHeight * 0.44))) // Compact height (10-13px)
   };
 
-  // Re-generate Barcode SVGs whenever labelList or dimensions change
+  // Re-generate Barcode SVGs with crispEdges whenever labelList or dimensions change
   useEffect(() => {
     const timer = setTimeout(() => {
       let renderIndex = 0;
@@ -158,18 +153,21 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           const el = document.getElementById(svgId);
           if (el) {
             try {
-              JsBarcode(el, item.barcode || '0000000000', {
+              // Compact Code128 with NO SVG text (avoids fuzzy text rendering)
+              JsBarcode(el, item.barcode || item.design_code || '0000000000', {
                 format: 'CODE128',
                 width: barcodeScale.width,
                 height: barcodeScale.height,
-                displayValue: true,
-                fontSize: barcodeScale.fontSize,
-                font: 'monospace',
-                textMargin: 1,
+                displayValue: false, // Pure bars - keeps barcode compact and crisp
                 margin: 0,
                 background: '#ffffff',
-                lineColor: '#000000' // Optical scanners require 100% black bars
+                lineColor: '#000000'
               });
+
+              // Force crispEdges on SVG root and all rect bars
+              el.setAttribute('shape-rendering', 'crispEdges');
+              const rects = el.querySelectorAll('rect');
+              rects.forEach((r) => r.setAttribute('shape-rendering', 'crispEdges'));
             } catch (e) {
               console.error('Barcode render error:', e);
             }
@@ -177,10 +175,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           renderIndex++;
         }
       });
-    }, 100);
+    }, 80);
 
     return () => clearTimeout(timer);
-  }, [labelList, dims, themeMode, isTestPrint]);
+  }, [labelList, dims, isTestPrint]);
 
   const handleUpdateQty = (idx: number, newQty: number) => {
     setLabelList((prev) =>
@@ -244,101 +242,48 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     rows.push(paddedRow);
   }
 
-  // Tag renderer component calibrated to scale dynamically inside 35mm x 25mm
+  // Helper to format Size cleanly: L, M, XL, XXL, FREE SIZE
+  const formatSize = (raw: string) => {
+    const s = (raw || '').trim().toUpperCase();
+    if (!s || s === 'FREE' || s === 'STD' || s === 'FREESIZE' || s === 'STANDARD') {
+      return 'FREE SIZE';
+    }
+    return s;
+  };
+
+  // Tag renderer: Minimalist, Simple & Razor-Sharp layout
   const renderTagContent = (item: BarcodeItem, tagIndex: number) => {
-    const isColor = themeMode === 'color';
-    const isPreprinted = themeMode === 'preprinted';
-    const isSmall = dims.labelWidth <= 38 || dims.labelHeight <= 25;
+    const sizeDisplay = formatSize(item.size);
+    const skuDisplay = item.design_code || item.barcode || 'SKU-001';
 
     return (
-      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white box-border overflow-hidden p-[0.8mm]">
-        {/* Top Header: Brand Name */}
-        {!isPreprinted && showStoreName && (
-          <div
-            className={`w-full py-0.5 px-0.5 rounded-xs tracking-wider font-serif uppercase font-bold truncate ${
-              isSmall ? 'text-[7px] leading-none' : 'text-[8.5px] leading-tight'
-            } ${
-              isColor
-                ? 'bg-[#681C32] text-white'
-                : 'bg-black text-white'
-            }`}
-          >
-            AAVNI ETHNICWEAR
-          </div>
-        )}
-
-        {/* Product Name */}
-        <div
-          className={`font-bold truncate px-0.5 leading-tight ${
-            isSmall ? 'text-[7.5px] mt-0.5' : 'text-[9px] mt-0.5'
-          } ${isColor ? 'text-[#30262A]' : 'text-black'}`}
-          title={item.name}
-        >
-          {item.name}
-        </div>
-
-        {/* Variant Info: Size • Color • Design Code */}
-        <div
-          className={`flex items-center justify-center space-x-0.5 px-0.5 leading-none ${
-            isSmall ? 'text-[6.5px]' : 'text-[7.5px]'
-          }`}
-        >
-          <span
-            className={`font-bold px-0.5 py-0.2 rounded ${
-              isColor
-                ? 'bg-[#FBF4F6] text-[#681C32] border border-[#E9DFE2]'
-                : 'border border-black text-black'
-            }`}
-          >
-            {item.size || 'Free'}
+      <div className="h-full w-full flex flex-col justify-between select-none bg-white box-border overflow-hidden px-[1.2mm] py-[0.8mm] text-black">
+        {/* Top Header: Brand (Aavni) & Size (e.g. L, M, XL, XXL, FREE SIZE) */}
+        <div className="flex items-center justify-between border-b border-black pb-0.5 leading-none">
+          <span className="font-serif font-black tracking-wider text-[9.5px] uppercase text-black">
+            Aavni
           </span>
-          <span className="text-gray-400">•</span>
-          <span className="truncate max-w-[42px] font-medium text-gray-800">
-            {item.color || 'Std'}
-          </span>
-          <span className="text-gray-400">•</span>
-          <span className="font-mono text-gray-700 truncate max-w-[42px] font-semibold">
-            {item.design_code}
+          <span className="font-sans font-black text-[9px] bg-black text-white px-1 py-0.5 rounded-xs tracking-wide">
+            {sizeDisplay}
           </span>
         </div>
 
-        {/* JsBarcode SVG Output (pure black & white for 100% optical scanner read) */}
-        <div className="flex justify-center items-center my-0.2 overflow-hidden">
-          <svg id={`barcode-svg-${tagIndex}`} className="max-w-full block"></svg>
+        {/* Center: Compact, Crisp 100% Monochrome Barcode */}
+        <div className="flex items-center justify-center my-auto py-0.5 overflow-hidden">
+          <svg
+            id={`barcode-svg-${tagIndex}`}
+            className="max-w-full block"
+            style={{ shapeRendering: 'crispEdges' }}
+          ></svg>
         </div>
 
-        {/* Price Tag Footer */}
-        <div
-          className={`pt-0.5 border-t flex items-center justify-center space-x-1 leading-tight ${
-            isColor ? 'border-[#E9DFE2] bg-[#FDFBFA]' : 'border-t border-black'
-          }`}
-        >
-          {showMrp && item.mrp && item.mrp > item.selling_price && (
-            <span
-              className={`line-through font-mono ${
-                isSmall ? 'text-[6.5px]' : 'text-[7.5px]'
-              } text-gray-500`}
-            >
-              ₹{item.mrp}
-            </span>
-          )}
-          <span
-            className={`font-extrabold font-mono ${
-              isSmall ? 'text-[9.5px]' : 'text-[11px]'
-            } ${
-              isColor
-                ? 'text-[#681C32] bg-[#FBF4F6] px-1 rounded'
-                : 'text-black font-black'
-            }`}
-          >
+        {/* Bottom Footer: SKU ID on Left & Price on Right */}
+        <div className="flex items-center justify-between border-t border-black pt-0.5 leading-none text-black">
+          <span className="font-mono font-bold text-[8.5px] truncate max-w-[62%] text-left" title={skuDisplay}>
+            SKU: {skuDisplay}
+          </span>
+          <span className="font-mono font-black text-[10.5px] text-right whitespace-nowrap">
             ₹{item.selling_price}
-          </span>
-          <span
-            className={`${
-              isSmall ? 'text-[5.5px]' : 'text-[6.5px]'
-            } text-gray-500 font-medium`}
-          >
-            (Incl.)
           </span>
         </div>
       </div>
@@ -378,41 +323,40 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               onClick={() => setShowConfigPanel(!showConfigPanel)}
               className={`px-3 py-2 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border ${
                 showConfigPanel
-                  ? 'bg-amber-400 text-stone-950 border-amber-300 shadow-sm font-bold'
-                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                  ? 'bg-amber-400 text-stone-900 border-amber-300 shadow-md'
+                  : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
               }`}
-              title="Configure roll dimensions and alignment offsets"
+              title="Calibrate millimeter dimensions, roll width, margins and gaps"
             >
-              <Settings2 className="w-4 h-4" />
-              <span>Label Dimensions (80mm / 35×25)</span>
+              <Sliders className="w-4 h-4" />
+              <span>Label Dimensions ({dims.rollWidth}mm / {dims.labelWidth}×{dims.labelHeight})</span>
             </button>
 
             <button
               onClick={() => setShowHelp(!showHelp)}
-              className={`p-2 text-xs rounded-xl flex items-center justify-center transition-colors cursor-pointer border ${
-                showHelp ? 'bg-amber-400 text-stone-950 border-amber-300' : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-              }`}
-              title="TVS Driver & Calibration Help"
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer border border-white/20"
+              title="TVS Driver & Anti-Blur Sharpness Guide"
             >
               <HelpCircle className="w-4 h-4" />
             </button>
 
-            {/* Test Print (1 Row Only) */}
+            {/* 1-Row Test Print Button */}
             <button
               onClick={handlePrintTestRow}
               disabled={totalLabels === 0}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 cursor-pointer transition-all disabled:opacity-40"
-              title="Print just 1 row (2 labels) to verify alignment without wasting paper"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-stone-900 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+              title="Print only 1 row (2 labels) to verify alignment before printing entire roll"
             >
-              <Eye className="w-3.5 h-3.5" />
+              <Eye className="w-4 h-4" />
               <span>Test Print (1 Row)</span>
             </button>
 
-            {/* Full Print */}
+            {/* Print All Button */}
             <button
               onClick={handlePrintAll}
               disabled={totalLabels === 0}
-              className="px-5 py-2 bg-[#28794B] hover:bg-[#1E5D39] text-white text-xs font-bold rounded-xl shadow-md flex items-center space-x-2 cursor-pointer transition-all disabled:opacity-40"
+              className="px-5 py-2 bg-[#28794B] hover:bg-[#1E5C38] disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+              title="Print all labels"
             >
               <Printer className="w-4 h-4" />
               <span>Print All ({totalLabels})</span>
@@ -420,23 +364,21 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer"
+              className="p-2 rounded-xl hover:bg-white/10 text-white transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Configurable Dimensions Panel */}
+        {/* Configurable Label Roll Dimensions Panel */}
         {showConfigPanel && (
-          <div className="no-print bg-[#FFFDF9] border-b-2 border-amber-300 p-4 shrink-0 shadow-inner">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2 text-stone-800">
-                <Sliders className="w-4 h-4 text-[#681C32]" />
-                <span className="font-bold text-xs uppercase tracking-wider text-[#681C32]">
-                  Exact Label Roll Measurements (in Millimeters)
-                </span>
-                <span className="text-[11px] text-stone-500">
+          <div className="no-print bg-[#FAF7F2] border-b border-[#E9DFE2] p-4 text-xs transition-all animate-in slide-in-from-top-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div className="flex items-center space-x-2 text-[#681C32] font-bold">
+                <Settings2 className="w-4 h-4" />
+                <span className="uppercase tracking-wider">Exact Label Roll Measurements (in Millimeters)</span>
+                <span className="text-stone-500 font-normal text-[11px]">
                   (Changes are auto-saved to localStorage)
                 </span>
               </div>
@@ -446,10 +388,17 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 <span className="text-stone-500 font-semibold text-[11px]">Roll Presets:</span>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-80mm-35x25')}
+                  onClick={() => handleApplyPreset('tvs-103.5mm-41x23')}
                   className="px-2 py-0.5 bg-emerald-50 border border-emerald-400 text-emerald-900 rounded text-[11px] font-bold cursor-pointer"
                 >
-                  ★ 80mm Roll (35×25mm 2-UP)
+                  ★ 103.5mm Roll (41×23mm 2-UP)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('tvs-80mm-35x25')}
+                  className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
+                >
+                  80mm Roll (35×25mm 2-UP)
                 </button>
                 <button
                   type="button"
@@ -479,9 +428,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     type="number"
                     step="0.5"
                     min="30"
-                    max="110"
+                    max="115"
                     value={dims.rollWidth}
-                    onChange={(e) => updateDim('rollWidth', parseFloat(e.target.value) || 80)}
+                    onChange={(e) => updateDim('rollWidth', parseFloat(e.target.value) || 103.5)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
@@ -500,7 +449,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     min="15"
                     max="108"
                     value={dims.labelWidth}
-                    onChange={(e) => updateDim('labelWidth', parseFloat(e.target.value) || 15)}
+                    onChange={(e) => updateDim('labelWidth', parseFloat(e.target.value) || 41)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
@@ -519,7 +468,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     min="10"
                     max="150"
                     value={dims.labelHeight}
-                    onChange={(e) => updateDim('labelHeight', parseFloat(e.target.value) || 10)}
+                    onChange={(e) => updateDim('labelHeight', parseFloat(e.target.value) || 23)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
@@ -537,7 +486,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     min="1"
                     max="4"
                     value={dims.columns}
-                    onChange={(e) => updateDim('columns', parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) => updateDim('columns', parseInt(e.target.value, 10) || 2)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
                   />
                   <span className="text-stone-400 text-[10px]">col</span>
@@ -573,7 +522,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     type="number"
                     step="0.5"
                     min="0"
-                    max="20"
+                    max="30"
                     value={dims.leftMargin}
                     onChange={(e) => updateDim('leftMargin', parseFloat(e.target.value) || 0)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
@@ -596,7 +545,6 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     value={dims.verticalGap}
                     onChange={(e) => updateDim('verticalGap', parseFloat(e.target.value) || 0)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
-                    title="Vertical gap between consecutive rows (reported 0mm / verify physically on roll)"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
                 </div>
@@ -616,7 +564,6 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     value={dims.topOffset}
                     onChange={(e) => updateDim('topOffset', parseFloat(e.target.value) || 0)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
-                    title="Nudge print up/down"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
                 </div>
@@ -646,19 +593,19 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 }}
                 className="text-stone-500 hover:text-red-600 underline cursor-pointer"
               >
-                Reset to 80mm / 35×25mm
+                Reset to 103.5mm / 41×23mm
               </button>
             </div>
           </div>
         )}
 
-        {/* TVS Driver & Gap Sensor Calibration Banner */}
+        {/* TVS Driver & Anti-Blur Sharpness Guide */}
         {showHelp && (
           <div className="no-print bg-stone-900 text-stone-100 border-b border-stone-800 px-6 py-4 text-xs space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>TVS New 46 IP / LP 46 Printer & Windows Driver Calibration Steps</span>
+                <span>Fix Blurry Thermal Barcodes (TVS New 46 IP / LP 46 Driver Calibration)</span>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
@@ -670,34 +617,30 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-stone-300">
               <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">1. Chrome / Edge Print Dialog (Ctrl + P)</div>
+                <div className="font-bold text-amber-300 mb-1">1. Why Was Print Blurry? (Blur Kyo Aa Raha Tha)</div>
+                <p className="leading-relaxed text-stone-300">
+                  Thermal printers (203 DPI) me sirf Black ya White dots hote hain. Browser anti-aliasing (gray pixels) aur TVS driver ka Halftone/Dithering barcode ki lines ko dhundla (fuzzy/blurry) bana deta hai. Software me ab 100% solid black 1-bit crisp vector render ho raha hai!
+                </p>
+              </div>
+
+              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
+                <div className="font-bold text-amber-300 mb-1">2. Windows TVS Driver Preferences (Must Set)</div>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li><strong>Dithering / Halftone:</strong> Set to <span className="text-emerald-400 font-bold">NONE</span> (Threshold / 1-bit Monochrome)</li>
+                  <li><strong>Darkness / Density:</strong> Set to <span className="text-emerald-400 font-bold">10 – 12</span> (Solid black ribbon burn)</li>
+                  <li><strong>Print Speed:</strong> Set to <span className="text-emerald-400 font-bold">2.5 to 3 ips</span> (Never use 5 ips)</li>
+                  <li><strong>Media Type:</strong> Label with Gaps (Transmissive Sensor)</li>
+                </ul>
+              </div>
+
+              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
+                <div className="font-bold text-amber-300 mb-1">3. Chrome / Edge Print Dialog (Ctrl + P)</div>
                 <ul className="space-y-1 list-disc list-inside">
                   <li><strong>Destination:</strong> TVS New 46 IP / LP 46</li>
                   <li><strong>Layout:</strong> <span className="text-emerald-400 font-bold">PORTRAIT</span> (खड़ा / सीधा)</li>
-                  <li><strong>Paper Size:</strong> User-Defined <strong>{dims.rollWidth}mm × {dims.labelHeight}mm</strong> (या 3.15" × 0.98")</li>
-                  <li><strong>Margins:</strong> <strong>None (शून्य)</strong> — Zero margins ensure exact alignment</li>
-                  <li><strong>Scale:</strong> <strong>100% / Actual Size</strong> (Do NOT use 'Fit to page')</li>
+                  <li><strong>Scale:</strong> <span className="text-emerald-400 font-bold">100% / Actual Size</span> (Do NOT use 'Fit to page')</li>
+                  <li><strong>Margins:</strong> <span className="text-emerald-400 font-bold">None (शून्य)</span></li>
                 </ul>
-              </div>
-
-              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">2. Windows Printer Preferences (TVS Driver)</div>
-                <ul className="space-y-1 list-disc list-inside">
-                  <li><strong>Media Type:</strong> Label with Gaps (Transmissive Sensor)</li>
-                  <li><strong>Print Method:</strong> Thermal Transfer (Wax/Resin Ribbon) या Direct Thermal</li>
-                  <li><strong>Print Speed:</strong> 4 ips to 6 ips (100–150 mm/s)</li>
-                  <li><strong>Darkness / Density:</strong> 9 to 11 (Deep black barcode contrast)</li>
-                </ul>
-              </div>
-
-              <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">3. Gap Sensor Auto-Calibration (10 सेकंड में)</div>
-                <p className="leading-relaxed">
-                  अगर प्रिंटर लेबल के गैप को मिस कर रहा हो:<br/>
-                  1. प्रिंटर का पावर <strong>OFF</strong> करें。<br/>
-                  2. <strong>PAUSE/FEED</strong> बटन दबाए रखें और पावर <strong>ON</strong> करें。<br/>
-                  3. <strong>3 बीप</strong> बजने पर बटन छोड़ें। प्रिंटर {dims.labelHeight}mm लेबल की हाइट ऑटो-कैलिब्रेट कर लेगा!
-                </p>
               </div>
             </div>
           </div>
@@ -751,86 +694,44 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               </button>
             </div>
 
-            {/* Theme & Display Options */}
+            {/* Display Options */}
             <div className="flex items-center space-x-3 flex-wrap gap-y-1.5">
-              {/* Theme Selector */}
-              <div className="flex items-center space-x-1.5">
-                <Palette className="w-3.5 h-3.5 text-[#776C70]" />
-                <span className="font-bold text-[#776C70]">Theme:</span>
-                <select
-                  value={themeMode}
-                  onChange={(e) => setThemeMode(e.target.value as ThemeMode)}
-                  className="px-2 py-1 bg-white border border-[#E9DFE2] rounded-lg text-xs font-semibold text-[#30262A] cursor-pointer"
-                >
-                  <option value="color">Full Color (Aavni Maroon)</option>
-                  <option value="thermal-sharp">TVS Ribbon B&W (203 DPI Crisp)</option>
-                  <option value="preprinted">Pre-Printed Roll (Overlay Only)</option>
-                </select>
-              </div>
+              <label className="flex items-center space-x-1.5 cursor-pointer text-[#30262A]">
+                <input
+                  type="checkbox"
+                  checked={showBorder}
+                  onChange={(e) => setShowBorder(e.target.checked)}
+                  className="rounded text-[#681C32] focus:ring-0"
+                />
+                <span className="font-medium text-xs">Label Border</span>
+              </label>
 
-              {/* Toggles */}
-              <div className="flex items-center space-x-2.5 pl-2 border-l border-[#E9DFE2]">
-                {themeMode !== 'preprinted' && (
-                  <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
-                    <input
-                      type="checkbox"
-                      checked={showStoreName}
-                      onChange={(e) => setShowStoreName(e.target.checked)}
-                      className="rounded text-[#681C32]"
-                    />
-                    <span>Header</span>
-                  </label>
-                )}
-                <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
-                  <input
-                    type="checkbox"
-                    checked={showMrp}
-                    onChange={(e) => setShowMrp(e.target.checked)}
-                    className="rounded text-[#681C32]"
-                  />
-                  <span>MRP</span>
-                </label>
-                <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
-                  <input
-                    type="checkbox"
-                    checked={showBorder}
-                    onChange={(e) => setShowBorder(e.target.checked)}
-                    className="rounded text-[#681C32]"
-                  />
-                  <span>Border</span>
-                </label>
+              <div className="text-[11px] font-mono text-stone-500 bg-stone-100 px-2 py-0.5 rounded border border-stone-200">
+                Simple Layout: Aavni • Size • SKU • Price
               </div>
             </div>
           </div>
 
-          {/* Item-by-Item Quantity Table */}
-          <div className="max-h-28 overflow-y-auto bg-white rounded-lg border border-[#E9DFE2] divide-y divide-[#E9DFE2] text-xs">
+          {/* Items Quantity Adjuster Bar */}
+          <div className="space-y-1.5 pt-1 border-t border-[#E9DFE2]/60">
             {labelList.map((item, idx) => (
-              <div key={idx} className="p-1.5 px-2.5 flex items-center justify-between hover:bg-[#F8F5F0]">
-                <div className="flex-1 min-w-0 pr-4">
-                  <div className="font-bold text-[#30262A] truncate">
-                    {item.name}
-                  </div>
-                  <div className="text-[11px] text-[#776C70] flex items-center space-x-2 font-mono">
-                    <span className="font-bold text-[#681C32]">{item.size || 'Free'}</span>
-                    <span>•</span>
-                    <span>{item.color || 'Standard'}</span>
-                    <span>•</span>
-                    <span>Code: {item.design_code}</span>
-                    <span>•</span>
-                    <span className="font-bold">{item.barcode}</span>
-                    {item.stock_quantity !== undefined && (
-                      <span className="text-gray-500">(In Stock: {item.stock_quantity})</span>
-                    )}
-                  </div>
+              <div
+                key={idx}
+                className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-[#E9DFE2] shadow-2xs"
+              >
+                <div className="flex-1 truncate mr-3">
+                  <span className="font-bold text-[#30262A]">{item.name}</span>
+                  <span className="text-[#776C70] ml-2 font-mono">
+                    [{formatSize(item.size)}] • SKU: {item.design_code} • ₹{item.selling_price}
+                  </span>
                 </div>
 
-                <div className="flex items-center space-x-3 shrink-0">
-                  <div className="flex items-center space-x-1.5 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg p-0.5">
+                <div className="flex items-center space-x-2 shrink-0">
+                  <div className="flex items-center border border-[#E9DFE2] rounded-md overflow-hidden bg-[#FDFBFA]">
                     <button
                       type="button"
-                      onClick={() => handleUpdateQty(idx, (item.quantity || 1) - 1)}
-                      className="w-5 h-5 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
+                      onClick={() => handleUpdateQty(idx, item.quantity - 1)}
+                      className="px-2 py-1 text-stone-600 hover:bg-[#E9DFE2] transition-colors cursor-pointer"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
@@ -839,12 +740,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                       min="0"
                       value={item.quantity}
                       onChange={(e) => handleUpdateQty(idx, parseInt(e.target.value, 10) || 0)}
-                      className="w-10 text-center font-mono font-bold text-xs bg-transparent focus:outline-none"
+                      className="w-12 text-center text-xs font-mono font-bold py-1 bg-transparent border-x border-[#E9DFE2] focus:outline-none"
                     />
                     <button
                       type="button"
-                      onClick={() => handleUpdateQty(idx, (item.quantity || 1) + 1)}
-                      className="w-5 h-5 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
+                      onClick={() => handleUpdateQty(idx, item.quantity + 1)}
+                      className="px-2 py-1 text-stone-600 hover:bg-[#E9DFE2] transition-colors cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
@@ -853,10 +754,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                   <button
                     type="button"
                     onClick={() => handleRemoveItem(idx)}
-                    className="text-gray-400 hover:text-red-600 p-1 cursor-pointer"
-                    title="Remove item"
+                    className="p-1.5 text-stone-400 hover:text-red-600 rounded hover:bg-stone-100 transition-colors cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -868,10 +768,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         <div className="flex-1 p-4 sm:p-6 bg-[#2B2326]/5 overflow-y-auto">
           {totalLabels === 0 ? (
             <div className="p-12 text-center text-sm text-[#776C70]">
-              No labels to print. Set quantity above.
+              No labels to print. Set label quantity above.
             </div>
           ) : (
-            <div className="printable-barcode-sheet mx-auto">
+            <div className="space-y-4">
               <div
                 className="tvs-roll-sheet mx-auto"
                 style={{
@@ -887,7 +787,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                   </span>
                 </div>
 
-                {rows.map((rowItems, rowIdx) => (
+                {rows.map((rowCells, rowIdx) => (
                   <div
                     key={rowIdx}
                     className="tvs-row"
@@ -898,23 +798,21 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                       display: 'grid',
                       gridTemplateColumns: `repeat(${dims.columns}, ${dims.labelWidth}mm)`,
                       columnGap: `${dims.horizontalGap}mm`,
-                      boxSizing: 'border-box'
+                      alignItems: 'stretch'
                     }}
                   >
-                    {rowItems.map((cell, colIdx) => (
+                    {rowCells.map((cell, colIdx) => (
                       <div
                         key={colIdx}
-                        className={`tvs-label ${
-                          showBorder ? 'border border-gray-300' : 'border border-transparent'
-                        } ${!cell ? 'opacity-0 pointer-events-none' : ''}`}
+                        className={`tvs-label ${showBorder ? 'border border-dashed border-stone-300' : ''}`}
                         style={{
                           width: `${dims.labelWidth}mm`,
                           height: `${dims.labelHeight}mm`,
-                          maxWidth: `${dims.labelWidth}mm`,
                           maxHeight: `${dims.labelHeight}mm`,
                           boxSizing: 'border-box',
                           overflow: 'hidden',
-                          borderRadius: '1.5mm'
+                          borderRadius: '1.5mm',
+                          background: '#ffffff'
                         }}
                       >
                         {cell ? renderTagContent(cell.item, cell.tagIndex) : null}
@@ -928,7 +826,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         </div>
       </div>
 
-      {/* Embedded Dynamic Print CSS - Strictly Configured to 80mm Roll & Exact Label Layout */}
+      {/* Embedded Dynamic Print CSS - Strictly Configured to 103.5mm Roll & Exact Label Layout */}
       <style>{`
         @media print {
           @page {
@@ -936,38 +834,48 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             margin: 0mm !important;
           }
 
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-
           html, body {
             margin: 0mm !important;
             padding: 0mm !important;
             background: #ffffff !important;
-            width: 100% !important;
+            width: ${dims.rollWidth}mm !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            image-rendering: -webkit-optimize-contrast !important;
+            image-rendering: pixelated !important;
+            image-rendering: crisp-edges !important;
           }
 
-          body * {
-            visibility: hidden;
+          /* Force razor-sharp 1-bit rendering on barcodes */
+          svg, svg * {
+            shape-rendering: crispEdges !important;
+            image-rendering: pixelated !important;
+            image-rendering: crisp-edges !important;
           }
 
-          .no-print {
+          /* Hide Everything outside the printable roll */
+          .no-print,
+          header,
+          aside,
+          nav,
+          button,
+          .fixed,
+          .backdrop-blur-xs {
             display: none !important;
           }
 
-          .printable-barcode-sheet,
-          .printable-barcode-sheet * {
-            visibility: visible;
+          /* Reset all parent wrappers */
+          body > div,
+          main,
+          div {
+            box-shadow: none !important;
+            background: transparent !important;
           }
 
-          .printable-barcode-sheet {
-            position: absolute !important;
-            left: 0mm !important;
-            top: 0mm !important;
-            margin: 0mm !important;
-            padding: 0mm !important;
+          .max-w-6xl {
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
@@ -990,23 +898,24 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             display: grid !important;
             grid-template-columns: repeat(${dims.columns}, ${dims.labelWidth}mm) !important;
             column-gap: ${dims.horizontalGap}mm !important;
-            page-break-after: always !important;
-            break-after: page !important;
+            margin-bottom: ${dims.verticalGap}mm !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            overflow: hidden !important;
-            margin: 0mm 0mm ${dims.verticalGap}mm 0mm !important;
-            padding: 0mm !important;
-            background: transparent !important;
-            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
             box-sizing: border-box !important;
+            overflow: hidden !important;
           }
 
-          /* Exact Column Positioning */
+          .tvs-row:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+            margin-bottom: 0mm !important;
+          }
+
+          /* Individual Label Precision Box */
           .tvs-label {
             width: ${dims.labelWidth}mm !important;
-            min-width: ${dims.labelWidth}mm !important;
-            max-width: ${dims.labelWidth}mm !important;
             height: ${dims.labelHeight}mm !important;
             max-height: ${dims.labelHeight}mm !important;
             box-sizing: border-box !important;

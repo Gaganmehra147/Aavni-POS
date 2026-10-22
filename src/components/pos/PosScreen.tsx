@@ -5,6 +5,7 @@ import { formatINR } from '../../lib/currency';
 import { useAuth } from '../../context/AuthContext';
 import { PaymentModal } from './PaymentModal';
 import { HoldCartModal } from './HoldCartModal';
+import { MobileScannerModal } from './MobileScannerModal';
 import {
   Barcode,
   Search,
@@ -18,7 +19,8 @@ import {
   Printer,
   Sparkles,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Smartphone
 } from 'lucide-react';
 
 interface PosScreenProps {
@@ -50,6 +52,7 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
   const [heldCarts, setHeldCarts] = useState<any[]>([]);
   const [showHeldModal, setShowHeldModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showMobileScanner, setShowMobileScanner] = useState(false);
   const [activeHeldId, setActiveHeldId] = useState<number | null>(null);
 
   // Success dialog after sale
@@ -112,22 +115,31 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Handle Barcode Scan
-  const handleBarcodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = barcodeInput.trim();
-    if (!code) return;
+  // Reusable Barcode Processor
+  const processBarcodeScan = async (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
 
     try {
-      const data = await api.get<{ variant: ProductVariant }>(`/products/variants/by-barcode/${encodeURIComponent(code)}`);
+      const data = await api.get<{ variant: ProductVariant }>(`/products/variants/by-barcode/${encodeURIComponent(clean)}`);
       if (data.variant) {
         addVariantToCart(data.variant);
         setBarcodeInput('');
+      } else {
+        alert(`Barcode ${clean} not found in catalog.`);
       }
     } catch (err: any) {
       alert(`Barcode Scan Error: ${err.message || 'Variant not found'}`);
     }
     focusScanner();
+  };
+
+  // Handle Barcode Scan Form
+  const handleBarcodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (barcodeInput.trim()) {
+      await processBarcodeScan(barcodeInput);
+    }
   };
 
   const addVariantToCart = (variant: ProductVariant) => {
@@ -405,14 +417,25 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
                 placeholder="Scan product barcode (USB scanner ready) or hit Enter..."
-                className="w-full pl-10 pr-24 py-2 bg-[#F8F5F0] border-2 border-[#E9DFE2] focus:border-[#681C32] rounded-lg text-sm font-mono text-[#30262A] focus:outline-none focus:bg-white transition-all shadow-inner"
+                className="w-full pl-10 pr-56 py-2 bg-[#F8F5F0] border-2 border-[#E9DFE2] focus:border-[#681C32] rounded-lg text-sm font-mono text-[#30262A] focus:outline-none focus:bg-white transition-all shadow-inner"
               />
-              <button
-                type="submit"
-                className="absolute right-1.5 top-1.5 px-3 py-1 bg-[#681C32] text-white text-xs font-semibold rounded-md hover:bg-[#451222] transition-colors"
-              >
-                Scan (Enter)
-              </button>
+              <div className="absolute right-1.5 top-1.5 flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileScanner(true)}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold rounded-md flex items-center space-x-1 shadow-xs transition-colors cursor-pointer"
+                  title="Scan tags using your mobile phone camera or computer webcam"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Mobile Scan</span>
+                </button>
+                <button
+                  type="submit"
+                  className="px-3 py-1 bg-[#681C32] text-white text-xs font-semibold rounded-md hover:bg-[#451222] transition-colors cursor-pointer"
+                >
+                  Scan (Enter)
+                </button>
+              </div>
             </div>
           </form>
 
@@ -892,6 +915,17 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
           </div>
         </div>
       )}
+
+      {/* Mobile / Webcam Barcode Scanner Modal */}
+      <MobileScannerModal
+        isOpen={showMobileScanner}
+        onClose={() => {
+          setShowMobileScanner(false);
+          focusScanner();
+        }}
+        onBarcodeScanned={(code) => processBarcodeScan(code)}
+        sessionId="counter-1"
+      />
     </div>
   );
 };

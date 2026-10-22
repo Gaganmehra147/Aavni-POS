@@ -1,8 +1,14 @@
 import { Router, Request, Response } from 'express';
+import os from 'os';
 import { queryAll, queryOne, run, withTransaction } from '../db';
 import { requireAuth } from '../middleware/auth';
 
 const router = Router();
+
+// In-memory real-time scanner synchronization
+const scannerClients = new Map<string, Set<Response>>();
+const scannerRecentEvents = new Map<string, Array<{ barcode: string; timestamp: number; variant?: any }>>();
+
 
 // Hold Cart
 router.post('/hold', requireAuth, async (req: Request, res: Response) => {
@@ -385,6 +391,131 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
+});
+
+// Helper to determine local LAN IPv4
+function getLocalIpAddress(): string {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+// 1. Get host info for QR code connection
+router.get('/mobile-scanner/host-info', (req: Request, res: Response) => {
+  const localIp = getLocalIpAddress();
+  const port = process.env.VITE_PORT || 3000;
+  res.json({
+    localIp,
+    port,
+    scannerUrl: `http://${localIp}:${port}/?view=mobile-scanner`
+  });
+});
+
+// 2. Mobile client pushes a scanned barcode
+router.post('/mobile-scanner/send', async (req: Request, res: Response) => {
+  try {
+    const { sessionId, barcode } = req.body;
+    if (!sessionId || !barcode) {
+      return res.status(400).json({ error: 'sessionId and barcode are required' });
+    }
+
+    const cleanBarcode = String(barcode).trim();
+
+    // Look up product variant info to return immediately to phone
+    const variant = await queryOne<any>(`
+      SELECT pv.*, p.name as product_name, p.category, p.brand, p.hsn_code, p.gst_rate
+      FROM product_variants pv
+      JOIN products p ON pv.product_id = p.id
+      WHERE pv.barcode = ? OR pv.sku = ?
+      LIMIT 1
+    `, [cleanBarcode, cleanBarcode]);
+
+    const event = {
+      barcode: cleanBarcode,
+      timestamp: Date.now(),
+      variant: variant || null
+    };
+
+    // Store in history
+    if (!scannerRecentEvents.has(sessionId)) {
+      scannerRecentEvents.set(sessionId, []);
+    }
+    const history = scannerRecentEvents.get(sessionId)!;
+    history.push(event);
+    if (history.length > 50) history.shift();
+
+    // Broadcast to SSE clients
+    const clients = scannerClients.get(sessionId);
+    if (clients && clients.size > 0) {
+      const payload = `data: ${JSON.stringify(event)}\n\n`;
+      clients.forEach((client) => {
+        try {
+          client.write(payload);
+        } catch (e) {
+          clients.delete(client);
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      scanned: cleanBarcode,
+      variant: variant || null
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. POS desktop listens for scans via Server-Sent Events (SSE)
+router.get('/mobile-scanner/stream/:sessionId', (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  if (!scannerClients.has(sessionId)) {
+    scannerClients.set(sessionId, new Set());
+  }
+  const clients = scannerClients.get(sessionId)!;
+  clients.add(res);
+
+  // Send initial ping
+  res.write(`data: ${JSON.stringify({ type: 'connected', sessionId })}\n\n`);
+
+  // Heartbeat to keep connection alive
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+    } catch (e) {
+      clearInterval(heartbeat);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    clients.delete(res);
+    if (clients.size === 0) {
+      scannerClients.delete(sessionId);
+    }
+  });
+});
+
+// 4. Fallback Polling endpoint
+router.get('/mobile-scanner/poll/:sessionId', (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const since = Number(req.query.since) || 0;
+  const history = scannerRecentEvents.get(sessionId) || [];
+  const fresh = history.filter((e) => e.timestamp > since);
+  res.json({ events: fresh, serverTime: Date.now() });
 });
 
 export default router;

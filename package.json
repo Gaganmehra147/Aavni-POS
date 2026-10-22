@@ -17,6 +17,8 @@
   "description": "Retail POS and Inventory Management Software for AAVNI ETHNICWEAR",
   "dependencies": {
     "@libsql/client": "^0.18.0",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",

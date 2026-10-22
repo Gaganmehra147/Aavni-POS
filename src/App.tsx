@@ -14,9 +14,18 @@ import { ReportsScreen } from './components/reports/ReportsScreen';
 import { SettingsScreen } from './components/settings/SettingsScreen';
 import { ThermalReceiptModal } from './components/print/ThermalReceiptModal';
 import { A4InvoiceModal } from './components/print/A4InvoiceModal';
+import { MobileScannerView } from './components/pos/MobileScannerView';
 import { Sparkles } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // Check if opened from smartphone camera as a wireless scanner
+  const urlParams = new URLSearchParams(window.location.search);
+  const isMobileScanner = urlParams.get('view') === 'mobile-scanner';
+
+  if (isMobileScanner) {
+    return <MobileScannerView />;
+  }
+
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>('pos');
 
