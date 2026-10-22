@@ -15,6 +15,7 @@ import {
   Sliders,
   Settings2,
   CheckCircle2,
+  AlertCircle,
   Eye,
   RefreshCw,
   HelpCircle
@@ -41,25 +42,28 @@ interface BarcodeLabelModalProps {
 export type ThemeMode = 'color' | 'thermal-sharp' | 'preprinted';
 
 // Storage key for persisting calibrated dimensions
-const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v2';
+const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v3_confirmed';
 
 export interface LabelDimensions {
-  columns: number;        // e.g. 2
-  labelWidth: number;     // e.g. 50 (in mm)
-  labelHeight: number;    // e.g. 25 (in mm)
-  horizontalGap: number;  // e.g. 3 (in mm between columns)
-  verticalGap: number;    // e.g. 2.5 (in mm between rows)
-  leftOffset: number;     // e.g. 0 (in mm shift left/right)
-  topOffset: number;      // e.g. 0 (in mm shift top/bottom)
+  rollWidth: number;      // e.g. 80 (in mm total media width)
+  labelWidth: number;     // e.g. 35 (in mm individual label width)
+  labelHeight: number;    // e.g. 25 (in mm individual label height)
+  columns: number;        // e.g. 2 (columns across)
+  horizontalGap: number;  // e.g. 4 (in mm between columns)
+  leftMargin: number;     // e.g. 3 (in mm left side margin/offset)
+  verticalGap: number;    // e.g. 0 (in mm vertical gap between rows, reported 0mm / verify physically)
+  topOffset: number;      // e.g. 0 (in mm top offset)
 }
 
+// Default initial values matching user's confirmed measurements
 const DEFAULT_DIMENSIONS: LabelDimensions = {
-  columns: 2,
-  labelWidth: 50,
+  rollWidth: 80,
+  labelWidth: 35,
   labelHeight: 25,
-  horizontalGap: 3,
-  verticalGap: 2.5,
-  leftOffset: 0,
+  columns: 2,
+  horizontalGap: 4,
+  leftMargin: 3,
+  verticalGap: 0,
   topOffset: 0
 };
 
@@ -71,7 +75,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }))
   );
 
-  // Load saved dimensions or use defaults
+  // Load saved dimensions or initialize with 35x25mm / 80mm roll defaults
   const [dims, setDims] = useState<LabelDimensions>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -109,16 +113,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     });
   };
 
-  const handleApplyPreset = (preset: 'tvs-50x25' | 'tvs-38x25' | 'single-50x25' | 'a4-sheet') => {
+  const handleApplyPreset = (preset: 'tvs-80mm-35x25' | 'tvs-104mm-50x25' | 'tvs-single-50x25' | 'a4-sheet') => {
     let newDims: LabelDimensions;
-    if (preset === 'tvs-50x25') {
-      newDims = { columns: 2, labelWidth: 50, labelHeight: 25, horizontalGap: 3, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
-    } else if (preset === 'tvs-38x25') {
-      newDims = { columns: 2, labelWidth: 38, labelHeight: 25, horizontalGap: 2.5, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
-    } else if (preset === 'single-50x25') {
-      newDims = { columns: 1, labelWidth: 50, labelHeight: 25, horizontalGap: 0, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
+    if (preset === 'tvs-80mm-35x25') {
+      newDims = { rollWidth: 80, labelWidth: 35, labelHeight: 25, columns: 2, horizontalGap: 4, leftMargin: 3, verticalGap: 0, topOffset: 0 };
+    } else if (preset === 'tvs-104mm-50x25') {
+      newDims = { rollWidth: 104, labelWidth: 50, labelHeight: 25, columns: 2, horizontalGap: 3, leftMargin: 0.5, verticalGap: 2.5, topOffset: 0 };
+    } else if (preset === 'tvs-single-50x25') {
+      newDims = { rollWidth: 50, labelWidth: 50, labelHeight: 25, columns: 1, horizontalGap: 0, leftMargin: 0, verticalGap: 2.5, topOffset: 0 };
     } else {
-      newDims = { columns: 3, labelWidth: 70, labelHeight: 35, horizontalGap: 2, verticalGap: 0, leftOffset: 0, topOffset: 0 };
+      newDims = { rollWidth: 210, labelWidth: 65, labelHeight: 35, columns: 3, horizontalGap: 3, leftMargin: 5, verticalGap: 0, topOffset: 10 };
     }
     setDims(newDims);
     try {
@@ -131,17 +135,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
   // Compute total labels count
   const totalLabels = labelList.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  // Total printable page width = leftOffset + (columns * labelWidth) + ((columns - 1) * horizontalGap)
-  const totalPageWidth = Math.max(
-    10,
-    dims.leftOffset + (dims.columns * dims.labelWidth) + ((dims.columns - 1) * dims.horizontalGap)
-  );
+  // Calculations for media boundaries
+  const totalColumnsWidth = (dims.columns * dims.labelWidth) + ((dims.columns - 1) * dims.horizontalGap);
+  const rightMargin = Number((dims.rollWidth - (dims.leftMargin + totalColumnsWidth)).toFixed(2));
+  const isWidthExceeded = rightMargin < 0;
 
   // Auto-calculated barcode scaling based on label size
   const barcodeScale = {
-    width: dims.labelWidth < 40 ? 0.9 : dims.labelWidth < 55 ? 1.05 : 1.25,
-    height: Math.max(14, Math.min(24, Math.round(dims.labelHeight * 0.72))),
-    fontSize: dims.labelWidth < 40 ? 7 : 8
+    width: dims.labelWidth < 38 ? 0.88 : dims.labelWidth < 50 ? 1.0 : 1.2,
+    height: Math.max(14, Math.min(22, Math.round(dims.labelHeight * 0.65))),
+    fontSize: dims.labelWidth < 38 ? 7 : 8
   };
 
   // Re-generate Barcode SVGs whenever labelList or dimensions change
@@ -234,7 +237,6 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
   const rows: Array<Array<{ item: BarcodeItem; tagIndex: number } | null>> = [];
   for (let i = 0; i < printableTags.length; i += dims.columns) {
     const chunk = printableTags.slice(i, i + dims.columns);
-    // Pad row with nulls if incomplete, so alignment stays strictly in Column 1, Column 2, etc.
     const paddedRow: Array<{ item: BarcodeItem; tagIndex: number } | null> = [...chunk];
     while (paddedRow.length < dims.columns) {
       paddedRow.push(null);
@@ -242,19 +244,19 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     rows.push(paddedRow);
   }
 
-  // Tag renderer component calibrated to scale dynamically inside user's exact label dimensions
+  // Tag renderer component calibrated to scale dynamically inside 35mm x 25mm
   const renderTagContent = (item: BarcodeItem, tagIndex: number) => {
     const isColor = themeMode === 'color';
     const isPreprinted = themeMode === 'preprinted';
-    const isCompact = dims.labelWidth < 45 || dims.labelHeight < 24;
+    const isSmall = dims.labelWidth <= 38 || dims.labelHeight <= 25;
 
     return (
-      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white box-border overflow-hidden p-[1mm]">
+      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white box-border overflow-hidden p-[0.8mm]">
         {/* Top Header: Brand Name */}
         {!isPreprinted && showStoreName && (
           <div
             className={`w-full py-0.5 px-0.5 rounded-xs tracking-wider font-serif uppercase font-bold truncate ${
-              isCompact ? 'text-[7px] leading-none' : 'text-[8.5px] leading-tight'
+              isSmall ? 'text-[7px] leading-none' : 'text-[8.5px] leading-tight'
             } ${
               isColor
                 ? 'bg-[#681C32] text-white'
@@ -268,7 +270,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         {/* Product Name */}
         <div
           className={`font-bold truncate px-0.5 leading-tight ${
-            isCompact ? 'text-[7.5px] mt-0.5' : 'text-[9px] mt-0.5'
+            isSmall ? 'text-[7.5px] mt-0.5' : 'text-[9px] mt-0.5'
           } ${isColor ? 'text-[#30262A]' : 'text-black'}`}
           title={item.name}
         >
@@ -278,7 +280,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         {/* Variant Info: Size • Color • Design Code */}
         <div
           className={`flex items-center justify-center space-x-0.5 px-0.5 leading-none ${
-            isCompact ? 'text-[6.5px]' : 'text-[7.5px]'
+            isSmall ? 'text-[6.5px]' : 'text-[7.5px]'
           }`}
         >
           <span
@@ -291,11 +293,11 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             {item.size || 'Free'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="truncate max-w-[45px] font-medium text-gray-800">
+          <span className="truncate max-w-[42px] font-medium text-gray-800">
             {item.color || 'Std'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="font-mono text-gray-700 truncate max-w-[45px] font-semibold">
+          <span className="font-mono text-gray-700 truncate max-w-[42px] font-semibold">
             {item.design_code}
           </span>
         </div>
@@ -314,7 +316,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           {showMrp && item.mrp && item.mrp > item.selling_price && (
             <span
               className={`line-through font-mono ${
-                isCompact ? 'text-[6.5px]' : 'text-[7.5px]'
+                isSmall ? 'text-[6.5px]' : 'text-[7.5px]'
               } text-gray-500`}
             >
               ₹{item.mrp}
@@ -322,7 +324,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           )}
           <span
             className={`font-extrabold font-mono ${
-              isCompact ? 'text-[9.5px]' : 'text-[11px]'
+              isSmall ? 'text-[9.5px]' : 'text-[11px]'
             } ${
               isColor
                 ? 'text-[#681C32] bg-[#FBF4F6] px-1 rounded'
@@ -333,7 +335,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </span>
           <span
             className={`${
-              isCompact ? 'text-[5.5px]' : 'text-[6.5px]'
+              isSmall ? 'text-[5.5px]' : 'text-[6.5px]'
             } text-gray-500 font-medium`}
           >
             (Incl.)
@@ -354,9 +356,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             </div>
             <div>
               <h2 className="font-serif font-bold text-lg flex items-center space-x-2">
-                <span>TVS Barcode Label Printing System</span>
+                <span>TVS New 46 IP Barcode Printer</span>
                 <span className="text-[10px] bg-emerald-500 text-white font-sans font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Calibrated {dims.columns}-Column Roll
+                  {dims.rollWidth}mm Roll • {dims.labelWidth}×{dims.labelHeight}mm ({dims.columns} Across)
                 </span>
               </h2>
               <p className="text-xs text-white/80 flex items-center space-x-2">
@@ -365,7 +367,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </span>
                 <span className="text-white/60">•</span>
                 <span>
-                  Label: <strong>{dims.labelWidth} × {dims.labelHeight} mm</strong> ({dims.columns} across, Web: {totalPageWidth}mm)
+                  L-Margin: {dims.leftMargin}mm • Gap: {dims.horizontalGap}mm • R-Margin: {rightMargin}mm
                 </span>
               </p>
             </div>
@@ -382,7 +384,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               title="Configure roll dimensions and alignment offsets"
             >
               <Settings2 className="w-4 h-4" />
-              <span>Label Dimensions & Offsets</span>
+              <span>Label Dimensions (80mm / 35×25)</span>
             </button>
 
             <button
@@ -400,7 +402,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               onClick={handlePrintTestRow}
               disabled={totalLabels === 0}
               className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 cursor-pointer transition-all disabled:opacity-40"
-              title="Print just 1 row of labels to check alignment without wasting media"
+              title="Print just 1 row (2 labels) to verify alignment without wasting paper"
             >
               <Eye className="w-3.5 h-3.5" />
               <span>Test Print (1 Row)</span>
@@ -425,67 +427,68 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
         </div>
 
-        {/* Configurable Dimensions Panel (Requirement 2 & 3: measured dimensions in mm) */}
+        {/* Configurable Dimensions Panel */}
         {showConfigPanel && (
           <div className="no-print bg-[#FFFDF9] border-b-2 border-amber-300 p-4 shrink-0 shadow-inner">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-2 text-stone-800">
                 <Sliders className="w-4 h-4 text-[#681C32]" />
                 <span className="font-bold text-xs uppercase tracking-wider text-[#681C32]">
-                  Measured Label Roll Dimensions (in Millimeters)
+                  Exact Label Roll Measurements (in Millimeters)
                 </span>
                 <span className="text-[11px] text-stone-500">
-                  (Apne scale/ruler se roll naap kar yahan enter karein - automatically save ho jayega)
+                  (Changes are auto-saved to localStorage)
                 </span>
               </div>
 
               {/* Quick Presets */}
               <div className="flex items-center space-x-1.5 text-xs">
-                <span className="text-stone-500 font-semibold text-[11px]">Presets:</span>
+                <span className="text-stone-500 font-semibold text-[11px]">Roll Presets:</span>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-50x25')}
-                  className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
+                  onClick={() => handleApplyPreset('tvs-80mm-35x25')}
+                  className="px-2 py-0.5 bg-emerald-50 border border-emerald-400 text-emerald-900 rounded text-[11px] font-bold cursor-pointer"
                 >
-                  50×25mm (2-UP)
+                  ★ 80mm Roll (35×25mm 2-UP)
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-38x25')}
+                  onClick={() => handleApplyPreset('tvs-104mm-50x25')}
                   className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
                 >
-                  38×25mm (2-UP)
+                  104mm Roll (50×25mm 2-UP)
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('single-50x25')}
+                  onClick={() => handleApplyPreset('tvs-single-50x25')}
                   className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
                 >
-                  50×25mm (1-UP)
+                  Single (50×25mm 1-UP)
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-xs">
-              {/* Columns */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2.5 text-xs">
+              {/* Total Roll Width */}
               <div className="bg-white p-2 rounded-lg border border-stone-200">
                 <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
-                  Columns (Labels/Row)
+                  Total Roll Width
                 </label>
                 <div className="flex items-center space-x-1">
                   <input
                     type="number"
-                    min="1"
-                    max="4"
-                    value={dims.columns}
-                    onChange={(e) => updateDim('columns', parseInt(e.target.value, 10) || 1)}
-                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                    step="0.5"
+                    min="30"
+                    max="110"
+                    value={dims.rollWidth}
+                    onChange={(e) => updateDim('rollWidth', parseFloat(e.target.value) || 80)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
                   />
-                  <span className="text-stone-400 text-[10px]">col</span>
+                  <span className="text-stone-400 text-[10px]">mm</span>
                 </div>
               </div>
 
-              {/* Label Width */}
+              {/* Individual Label Width */}
               <div className="bg-white p-2 rounded-lg border border-stone-200">
                 <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
                   Label Width
@@ -504,7 +507,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </div>
               </div>
 
-              {/* Label Height */}
+              {/* Individual Label Height */}
               <div className="bg-white p-2 rounded-lg border border-stone-200">
                 <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
                   Label Height
@@ -523,7 +526,25 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </div>
               </div>
 
-              {/* Horizontal Gap */}
+              {/* Columns Count */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Columns
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="4"
+                    value={dims.columns}
+                    onChange={(e) => updateDim('columns', parseInt(e.target.value, 10) || 1)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                  />
+                  <span className="text-stone-400 text-[10px]">col</span>
+                </div>
+              </div>
+
+              {/* Horizontal Center Gap */}
               <div className="bg-white p-2 rounded-lg border border-stone-200">
                 <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
                   Horizontal Gap
@@ -542,7 +563,26 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </div>
               </div>
 
-              {/* Vertical Gap */}
+              {/* Left Margin / Offset */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Left Margin
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="20"
+                    value={dims.leftMargin}
+                    onChange={(e) => updateDim('leftMargin', parseFloat(e.target.value) || 0)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Vertical Gap between rows */}
               <div className="bg-white p-2 rounded-lg border border-stone-200">
                 <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
                   Vertical Gap
@@ -556,26 +596,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     value={dims.verticalGap}
                     onChange={(e) => updateDim('verticalGap', parseFloat(e.target.value) || 0)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
-                  />
-                  <span className="text-stone-400 text-[10px]">mm</span>
-                </div>
-              </div>
-
-              {/* Left Offset */}
-              <div className="bg-white p-2 rounded-lg border border-stone-200">
-                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
-                  Left Offset
-                </label>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="-10"
-                    max="20"
-                    value={dims.leftOffset}
-                    onChange={(e) => updateDim('leftOffset', parseFloat(e.target.value) || 0)}
-                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
-                    title="Nudge print left/right (Negative = Left, Positive = Right)"
+                    title="Vertical gap between consecutive rows (reported 0mm / verify physically on roll)"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
                 </div>
@@ -595,18 +616,28 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     value={dims.topOffset}
                     onChange={(e) => updateDim('topOffset', parseFloat(e.target.value) || 0)}
                     className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
-                    title="Nudge print up/down (Negative = Up, Positive = Down)"
+                    title="Nudge print up/down"
                   />
                   <span className="text-stone-400 text-[10px]">mm</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-2.5 flex items-center justify-between text-[11px] text-stone-500">
-              <span className="flex items-center space-x-1 text-emerald-700 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Calculated Total Page Width: <strong>{totalPageWidth} mm</strong></span>
-              </span>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between text-[11px] text-stone-600 gap-2">
+              <div className="flex items-center space-x-3">
+                <span className={`flex items-center space-x-1 font-semibold ${isWidthExceeded ? 'text-red-600' : 'text-emerald-700'}`}>
+                  {isWidthExceeded ? <AlertCircle className="w-4 h-4 text-red-600" /> : <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                  <span>
+                    Columns Width: <strong>{totalColumnsWidth}mm</strong> | Left Margin: <strong>{dims.leftMargin}mm</strong> | Calculated Right Margin: <strong>{rightMargin}mm</strong>
+                  </span>
+                </span>
+                {isWidthExceeded && (
+                  <span className="text-red-600 font-bold">
+                    ⚠️ Total width exceeds roll width ({dims.rollWidth}mm)! Reduce label width or gap.
+                  </span>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -615,19 +646,19 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 }}
                 className="text-stone-500 hover:text-red-600 underline cursor-pointer"
               >
-                Reset to default (50×25mm 2-UP)
+                Reset to 80mm / 35×25mm
               </button>
             </div>
           </div>
         )}
 
-        {/* TVS Driver & Gap Sensor Calibration Banner (Requirement 9) */}
+        {/* TVS Driver & Gap Sensor Calibration Banner */}
         {showHelp && (
           <div className="no-print bg-stone-900 text-stone-100 border-b border-stone-800 px-6 py-4 text-xs space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>TVS LP 46 NEO / 46 IP Printer & Windows Driver Calibration Steps</span>
+                <span>TVS New 46 IP / LP 46 Printer & Windows Driver Calibration Steps</span>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
@@ -641,9 +672,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
                 <div className="font-bold text-amber-300 mb-1">1. Chrome / Edge Print Dialog (Ctrl + P)</div>
                 <ul className="space-y-1 list-disc list-inside">
-                  <li><strong>Destination:</strong> TVS LP 46 NEO / 46 IP</li>
+                  <li><strong>Destination:</strong> TVS New 46 IP / LP 46</li>
                   <li><strong>Layout:</strong> <span className="text-emerald-400 font-bold">PORTRAIT</span> (खड़ा / सीधा)</li>
-                  <li><strong>Paper Size:</strong> User-Defined <strong>{totalPageWidth}mm × {dims.labelHeight}mm</strong></li>
+                  <li><strong>Paper Size:</strong> User-Defined <strong>{dims.rollWidth}mm × {dims.labelHeight}mm</strong> (या 3.15" × 0.98")</li>
                   <li><strong>Margins:</strong> <strong>None (शून्य)</strong> — Zero margins ensure exact alignment</li>
                   <li><strong>Scale:</strong> <strong>100% / Actual Size</strong> (Do NOT use 'Fit to page')</li>
                 </ul>
@@ -672,7 +703,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
         )}
 
-        {/* Control Toolbar (Bulk Presets, Themes, Toggles) */}
+        {/* Control Toolbar */}
         <div className="no-print bg-[#FDFBFA] border-b border-[#E9DFE2] p-3.5 shrink-0 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Quick Bulk Presets */}
@@ -833,7 +864,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
         </div>
 
-        {/* Multi-Row Live Print Preview (Requirement 7) */}
+        {/* Multi-Row Live Print Preview */}
         <div className="flex-1 p-4 sm:p-6 bg-[#2B2326]/5 overflow-y-auto">
           {totalLabels === 0 ? (
             <div className="p-12 text-center text-sm text-[#776C70]">
@@ -844,15 +875,15 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               <div
                 className="tvs-roll-sheet mx-auto"
                 style={{
-                  width: `${totalPageWidth}mm`,
-                  paddingLeft: dims.leftOffset > 0 ? `${dims.leftOffset}mm` : '0mm',
+                  width: `${dims.rollWidth}mm`,
+                  paddingLeft: dims.leftMargin > 0 ? `${dims.leftMargin}mm` : '0mm',
                   paddingTop: dims.topOffset > 0 ? `${dims.topOffset}mm` : '0mm'
                 }}
               >
                 <div className="no-print text-center text-[11px] font-mono text-[#776C70] mb-2.5 flex items-center justify-center space-x-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
                   <span>
-                    Multi-Row Roll Preview ({dims.columns} Columns Across • {dims.labelWidth}mm × {dims.labelHeight}mm • Total Web: {totalPageWidth}mm)
+                    Roll Media: {dims.rollWidth}mm Web • Labels: {dims.labelWidth}×{dims.labelHeight}mm ({dims.columns} Across) • Gaps: H-{dims.horizontalGap}mm, V-{dims.verticalGap}mm
                   </span>
                 </div>
 
@@ -861,9 +892,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     key={rowIdx}
                     className="tvs-row"
                     style={{
-                      width: `${totalPageWidth}mm`,
+                      width: `${dims.rollWidth}mm`,
                       height: `${dims.labelHeight}mm`,
-                      marginBottom: `${dims.verticalGap}mm`,
+                      marginBottom: dims.verticalGap > 0 ? `${dims.verticalGap}mm` : '0mm',
                       display: 'grid',
                       gridTemplateColumns: `repeat(${dims.columns}, ${dims.labelWidth}mm)`,
                       columnGap: `${dims.horizontalGap}mm`,
@@ -883,7 +914,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                           maxHeight: `${dims.labelHeight}mm`,
                           boxSizing: 'border-box',
                           overflow: 'hidden',
-                          borderRadius: '2mm'
+                          borderRadius: '1.5mm'
                         }}
                       >
                         {cell ? renderTagContent(cell.item, cell.tagIndex) : null}
@@ -897,7 +928,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         </div>
       </div>
 
-      {/* Embedded Dynamic Print CSS - Strictly Configured to Actual Label Layout (Requirement 6, 10) */}
+      {/* Embedded Dynamic Print CSS - Strictly Configured to 80mm Roll & Exact Label Layout */}
       <style>{`
         @media print {
           @page {
@@ -940,20 +971,20 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
-            width: 100% !important;
+            width: ${dims.rollWidth}mm !important;
           }
 
           .tvs-roll-sheet {
-            width: ${totalPageWidth}mm !important;
+            width: ${dims.rollWidth}mm !important;
             margin: 0mm !important;
-            padding-left: ${dims.leftOffset}mm !important;
+            padding-left: ${dims.leftMargin}mm !important;
             padding-top: ${dims.topOffset}mm !important;
             background: transparent !important;
           }
 
           /* Exact Row Progression: One Physical Feed per Row */
           .tvs-row {
-            width: ${totalPageWidth}mm !important;
+            width: ${dims.rollWidth}mm !important;
             height: ${dims.labelHeight}mm !important;
             max-height: ${dims.labelHeight}mm !important;
             display: grid !important;
@@ -982,7 +1013,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             overflow: hidden !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            padding: 0.6mm 1mm !important;
+            padding: 0.6mm 0.8mm !important;
             background: #ffffff !important;
             border-radius: 1.5mm !important;
             ${showBorder ? 'border: 0.5px solid #d1d5db !important;' : 'border: none !important;'}
