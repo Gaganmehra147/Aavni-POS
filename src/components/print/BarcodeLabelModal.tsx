@@ -1,7 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { formatINR } from '../../lib/currency';
-import { X, Printer, Copy, Layers, Trash2, Plus, Minus, Tag, Palette, Info, RotateCw, CheckCircle2 } from 'lucide-react';
+import {
+  X,
+  Printer,
+  Copy,
+  Layers,
+  Trash2,
+  Plus,
+  Minus,
+  Tag,
+  Palette,
+  Info,
+  Sliders,
+  Settings2,
+  CheckCircle2,
+  Eye,
+  RefreshCw,
+  HelpCircle
+} from 'lucide-react';
 
 export interface BarcodeItem {
   id?: number | string;
@@ -21,9 +38,30 @@ interface BarcodeLabelModalProps {
   onClose: () => void;
 }
 
-export type LayoutMode = 'tvs-2up' | 'thermal-1up' | 'a4-24' | 'a4-40';
-export type LabelSize = '50x25' | '38x25' | '35x25';
 export type ThemeMode = 'color' | 'thermal-sharp' | 'preprinted';
+
+// Storage key for persisting calibrated dimensions
+const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v2';
+
+export interface LabelDimensions {
+  columns: number;        // e.g. 2
+  labelWidth: number;     // e.g. 50 (in mm)
+  labelHeight: number;    // e.g. 25 (in mm)
+  horizontalGap: number;  // e.g. 3 (in mm between columns)
+  verticalGap: number;    // e.g. 2.5 (in mm between rows)
+  leftOffset: number;     // e.g. 0 (in mm shift left/right)
+  topOffset: number;      // e.g. 0 (in mm shift top/bottom)
+}
+
+const DEFAULT_DIMENSIONS: LabelDimensions = {
+  columns: 2,
+  labelWidth: 50,
+  labelHeight: 25,
+  horizontalGap: 3,
+  verticalGap: 2.5,
+  leftOffset: 0,
+  topOffset: 0
+};
 
 export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: initialItems, onClose }) => {
   const [labelList, setLabelList] = useState<BarcodeItem[]>(() =>
@@ -33,51 +71,80 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }))
   );
 
-  // Default to user's exact roll from photo: 50mm x 25mm (2 Across = 104mm total roll)
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>('tvs-2up');
-  const [labelSize, setLabelSize] = useState<LabelSize>('50x25');
-  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  // Load saved dimensions or use defaults
+  const [dims, setDims] = useState<LabelDimensions>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_DIMENSIONS, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Failed to parse saved label dimensions:', e);
+    }
+    return DEFAULT_DIMENSIONS;
+  });
+
+  // Settings & Toggles
+  const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('color');
   const [showStoreName, setShowStoreName] = useState(true);
   const [showMrp, setShowMrp] = useState(true);
   const [showBorder, setShowBorder] = useState(true);
-  const [showHelp, setShowHelp] = useState(false);
+
+  // Test Print mode (1 row only = columns labels)
+  const [isTestPrint, setIsTestPrint] = useState(false);
+
+  // Save dimensions to localStorage whenever changed
+  const updateDim = (key: keyof LabelDimensions, value: number) => {
+    setDims((prev) => {
+      const updated = { ...prev, [key]: Number(value) };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save printer dimensions:', e);
+      }
+      return updated;
+    });
+  };
+
+  const handleApplyPreset = (preset: 'tvs-50x25' | 'tvs-38x25' | 'single-50x25' | 'a4-sheet') => {
+    let newDims: LabelDimensions;
+    if (preset === 'tvs-50x25') {
+      newDims = { columns: 2, labelWidth: 50, labelHeight: 25, horizontalGap: 3, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
+    } else if (preset === 'tvs-38x25') {
+      newDims = { columns: 2, labelWidth: 38, labelHeight: 25, horizontalGap: 2.5, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
+    } else if (preset === 'single-50x25') {
+      newDims = { columns: 1, labelWidth: 50, labelHeight: 25, horizontalGap: 0, verticalGap: 2.5, leftOffset: 0, topOffset: 0 };
+    } else {
+      newDims = { columns: 3, labelWidth: 70, labelHeight: 35, horizontalGap: 2, verticalGap: 0, leftOffset: 0, topOffset: 0 };
+    }
+    setDims(newDims);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newDims));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Compute total labels count
   const totalLabels = labelList.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
-  // Dimension settings
-  const config = {
-    '50x25': {
-      labelWidth: '50mm',
-      labelHeight: '24mm',
-      rowWidth: '104mm',
-      gap: '3mm',
-      barcodeWidth: 1.15,
-      barcodeHeight: 20,
-      fontSize: 8
-    },
-    '38x25': {
-      labelWidth: '38mm',
-      labelHeight: '24mm',
-      rowWidth: '79mm',
-      gap: '2mm',
-      barcodeWidth: 0.95,
-      barcodeHeight: 18,
-      fontSize: 7.5
-    },
-    '35x25': {
-      labelWidth: '35mm',
-      labelHeight: '24mm',
-      rowWidth: '73mm',
-      gap: '2mm',
-      barcodeWidth: 0.9,
-      barcodeHeight: 17,
-      fontSize: 7
-    }
-  }[labelSize];
+  // Total printable page width = leftOffset + (columns * labelWidth) + ((columns - 1) * horizontalGap)
+  const totalPageWidth = Math.max(
+    10,
+    dims.leftOffset + (dims.columns * dims.labelWidth) + ((dims.columns - 1) * dims.horizontalGap)
+  );
 
-  // Re-generate Barcode SVGs whenever labelList, layoutMode, labelSize or themeMode changes
+  // Auto-calculated barcode scaling based on label size
+  const barcodeScale = {
+    width: dims.labelWidth < 40 ? 0.9 : dims.labelWidth < 55 ? 1.05 : 1.25,
+    height: Math.max(14, Math.min(24, Math.round(dims.labelHeight * 0.72))),
+    fontSize: dims.labelWidth < 40 ? 7 : 8
+  };
+
+  // Re-generate Barcode SVGs whenever labelList or dimensions change
   useEffect(() => {
     const timer = setTimeout(() => {
       let renderIndex = 0;
@@ -88,13 +155,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           const el = document.getElementById(svgId);
           if (el) {
             try {
-              const isThermal = layoutMode === 'tvs-2up' || layoutMode === 'thermal-1up';
               JsBarcode(el, item.barcode || '0000000000', {
                 format: 'CODE128',
-                width: isThermal ? config.barcodeWidth : 1.25,
-                height: isThermal ? config.barcodeHeight : 26,
+                width: barcodeScale.width,
+                height: barcodeScale.height,
                 displayValue: true,
-                fontSize: isThermal ? config.fontSize : 9,
+                fontSize: barcodeScale.fontSize,
                 font: 'monospace',
                 textMargin: 1,
                 margin: 0,
@@ -108,10 +174,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           renderIndex++;
         }
       });
-    }, 120);
+    }, 100);
 
     return () => clearTimeout(timer);
-  }, [labelList, layoutMode, labelSize, themeMode, rotation]);
+  }, [labelList, dims, themeMode, isTestPrint]);
 
   const handleUpdateQty = (idx: number, newQty: number) => {
     setLabelList((prev) =>
@@ -136,8 +202,19 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     setLabelList((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handlePrint = () => {
-    window.print();
+  // Print execution: Full or 1-Row Test Print
+  const handlePrintAll = () => {
+    setIsTestPrint(false);
+    setTimeout(() => {
+      window.print();
+    }, 50);
+  };
+
+  const handlePrintTestRow = () => {
+    setIsTestPrint(true);
+    setTimeout(() => {
+      window.print();
+    }, 50);
   };
 
   // Flatten items into individual printable tags
@@ -150,24 +227,34 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     }
   });
 
-  // For TVS 2-UP: group tags into pairs of 2 (left & right sticker)
-  const tvsPairs: Array<Array<{ item: BarcodeItem; tagIndex: number }>> = [];
-  for (let i = 0; i < flattenedTags.length; i += 2) {
-    tvsPairs.push(flattenedTags.slice(i, i + 2));
+  // If in Test Print mode, only print 1 row (number of labels = dims.columns)
+  const printableTags = isTestPrint ? flattenedTags.slice(0, dims.columns) : flattenedTags;
+
+  // Group tags into rows of `dims.columns`
+  const rows: Array<Array<{ item: BarcodeItem; tagIndex: number } | null>> = [];
+  for (let i = 0; i < printableTags.length; i += dims.columns) {
+    const chunk = printableTags.slice(i, i + dims.columns);
+    // Pad row with nulls if incomplete, so alignment stays strictly in Column 1, Column 2, etc.
+    const paddedRow: Array<{ item: BarcodeItem; tagIndex: number } | null> = [...chunk];
+    while (paddedRow.length < dims.columns) {
+      paddedRow.push(null);
+    }
+    rows.push(paddedRow);
   }
 
-  // Tag renderer component calibrated for TVS LP 46 NEO 203 DPI print head
-  const renderTagContent = (item: BarcodeItem, tagIndex: number, isTvs: boolean = false) => {
+  // Tag renderer component calibrated to scale dynamically inside user's exact label dimensions
+  const renderTagContent = (item: BarcodeItem, tagIndex: number) => {
     const isColor = themeMode === 'color';
     const isPreprinted = themeMode === 'preprinted';
+    const isCompact = dims.labelWidth < 45 || dims.labelHeight < 24;
 
     return (
-      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white">
+      <div className="h-full w-full flex flex-col justify-between text-center select-none bg-white box-border overflow-hidden p-[1mm]">
         {/* Top Header: Brand Name */}
         {!isPreprinted && showStoreName && (
           <div
-            className={`w-full py-0.5 px-1 rounded-xs tracking-wider font-serif uppercase font-bold ${
-              isTvs ? 'text-[8px] leading-none' : 'text-[9px] leading-tight'
+            className={`w-full py-0.5 px-0.5 rounded-xs tracking-wider font-serif uppercase font-bold truncate ${
+              isCompact ? 'text-[7px] leading-none' : 'text-[8.5px] leading-tight'
             } ${
               isColor
                 ? 'bg-[#681C32] text-white'
@@ -181,7 +268,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
         {/* Product Name */}
         <div
           className={`font-bold truncate px-0.5 leading-tight ${
-            isTvs ? 'text-[8.5px] mt-0.5' : 'text-[10px]'
+            isCompact ? 'text-[7.5px] mt-0.5' : 'text-[9px] mt-0.5'
           } ${isColor ? 'text-[#30262A]' : 'text-black'}`}
           title={item.name}
         >
@@ -190,12 +277,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
         {/* Variant Info: Size • Color • Design Code */}
         <div
-          className={`flex items-center justify-center space-x-1 px-0.5 leading-none ${
-            isTvs ? 'text-[7.5px]' : 'text-[8.5px]'
+          className={`flex items-center justify-center space-x-0.5 px-0.5 leading-none ${
+            isCompact ? 'text-[6.5px]' : 'text-[7.5px]'
           }`}
         >
           <span
-            className={`font-bold px-1 py-0.2 rounded ${
+            className={`font-bold px-0.5 py-0.2 rounded ${
               isColor
                 ? 'bg-[#FBF4F6] text-[#681C32] border border-[#E9DFE2]'
                 : 'border border-black text-black'
@@ -204,17 +291,17 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             {item.size || 'Free'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="truncate max-w-[55px] font-medium text-gray-800">
-            {item.color || 'Standard'}
+          <span className="truncate max-w-[45px] font-medium text-gray-800">
+            {item.color || 'Std'}
           </span>
           <span className="text-gray-400">•</span>
-          <span className="font-mono text-gray-700 truncate max-w-[50px] font-semibold">
+          <span className="font-mono text-gray-700 truncate max-w-[45px] font-semibold">
             {item.design_code}
           </span>
         </div>
 
         {/* JsBarcode SVG Output (pure black & white for 100% optical scanner read) */}
-        <div className="flex justify-center items-center my-0.5">
+        <div className="flex justify-center items-center my-0.2 overflow-hidden">
           <svg id={`barcode-svg-${tagIndex}`} className="max-w-full block"></svg>
         </div>
 
@@ -227,15 +314,15 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           {showMrp && item.mrp && item.mrp > item.selling_price && (
             <span
               className={`line-through font-mono ${
-                isTvs ? 'text-[7.5px]' : 'text-[8.5px]'
+                isCompact ? 'text-[6.5px]' : 'text-[7.5px]'
               } text-gray-500`}
             >
-              MRP:{formatINR(item.mrp)}
+              ₹{item.mrp}
             </span>
           )}
           <span
             className={`font-extrabold font-mono ${
-              isTvs ? 'text-[10.5px]' : 'text-xs'
+              isCompact ? 'text-[9.5px]' : 'text-[11px]'
             } ${
               isColor
                 ? 'text-[#681C32] bg-[#FBF4F6] px-1 rounded'
@@ -246,10 +333,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </span>
           <span
             className={`${
-              isTvs ? 'text-[6.5px]' : 'text-[7.5px]'
+              isCompact ? 'text-[5.5px]' : 'text-[6.5px]'
             } text-gray-500 font-medium`}
           >
-            (Incl. Taxes)
+            (Incl.)
           </span>
         </div>
       </div>
@@ -258,50 +345,77 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-[#E9DFE2] overflow-hidden my-4 flex flex-col max-h-[94vh]">
+      <div className="bg-white rounded-2xl w-full max-w-6xl shadow-2xl border border-[#E9DFE2] overflow-hidden my-4 flex flex-col max-h-[95vh]">
         {/* Modal Header */}
-        <div className="no-print bg-[#681C32] px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm">
+        <div className="no-print bg-[#681C32] px-6 py-3.5 text-white flex items-center justify-between shrink-0 shadow-sm">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shadow-inner">
               <Tag className="w-5 h-5 text-white" />
             </div>
             <div>
               <h2 className="font-serif font-bold text-lg flex items-center space-x-2">
-                <span>TVS Barcode Label Printer (2-Across Roll)</span>
+                <span>TVS Barcode Label Printing System</span>
+                <span className="text-[10px] bg-emerald-500 text-white font-sans font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Calibrated {dims.columns}-Column Roll
+                </span>
               </h2>
               <p className="text-xs text-white/80 flex items-center space-x-2">
                 <span>
                   Total Labels: <strong className="text-amber-300 font-mono text-sm">{totalLabels}</strong>
                 </span>
-                {layoutMode === 'tvs-2up' && (
-                  <span className="text-white/70">
-                    • {tvsPairs.length} Roll Rows ({config.rowWidth} Total Roll Width)
-                  </span>
-                )}
+                <span className="text-white/60">•</span>
+                <span>
+                  Label: <strong>{dims.labelWidth} × {dims.labelHeight} mm</strong> ({dims.columns} across, Web: {totalPageWidth}mm)
+                </span>
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
+
+          <div className="flex items-center space-x-2.5">
             <button
-              onClick={() => setShowHelp(!showHelp)}
+              onClick={() => setShowConfigPanel(!showConfigPanel)}
               className={`px-3 py-2 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition-colors cursor-pointer border ${
-                showHelp
-                  ? 'bg-amber-400 text-stone-950 border-amber-300 shadow-sm'
+                showConfigPanel
+                  ? 'bg-amber-400 text-stone-950 border-amber-300 shadow-sm font-bold'
                   : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
               }`}
-              title="TVS LP 46 NEO Setup Instructions"
+              title="Configure roll dimensions and alignment offsets"
             >
-              <Info className="w-4 h-4 text-amber-300" />
-              <span>TVS Setup Guide</span>
+              <Settings2 className="w-4 h-4" />
+              <span>Label Dimensions & Offsets</span>
             </button>
+
             <button
-              onClick={handlePrint}
+              onClick={() => setShowHelp(!showHelp)}
+              className={`p-2 text-xs rounded-xl flex items-center justify-center transition-colors cursor-pointer border ${
+                showHelp ? 'bg-amber-400 text-stone-950 border-amber-300' : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+              }`}
+              title="TVS Driver & Calibration Help"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+
+            {/* Test Print (1 Row Only) */}
+            <button
+              onClick={handlePrintTestRow}
               disabled={totalLabels === 0}
-              className="px-5 py-2.5 bg-[#28794B] hover:bg-[#1E5D39] text-white text-xs font-bold rounded-xl shadow-md flex items-center space-x-2 cursor-pointer transition-all disabled:opacity-40"
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold rounded-xl shadow-xs flex items-center space-x-1.5 cursor-pointer transition-all disabled:opacity-40"
+              title="Print just 1 row of labels to check alignment without wasting media"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Test Print (1 Row)</span>
+            </button>
+
+            {/* Full Print */}
+            <button
+              onClick={handlePrintAll}
+              disabled={totalLabels === 0}
+              className="px-5 py-2 bg-[#28794B] hover:bg-[#1E5D39] text-white text-xs font-bold rounded-xl shadow-md flex items-center space-x-2 cursor-pointer transition-all disabled:opacity-40"
             >
               <Printer className="w-4 h-4" />
-              <span>Print {totalLabels} Labels</span>
+              <span>Print All ({totalLabels})</span>
             </button>
+
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer"
@@ -311,13 +425,209 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
         </div>
 
-        {/* TVS LP 46 NEO Instructions Banner */}
+        {/* Configurable Dimensions Panel (Requirement 2 & 3: measured dimensions in mm) */}
+        {showConfigPanel && (
+          <div className="no-print bg-[#FFFDF9] border-b-2 border-amber-300 p-4 shrink-0 shadow-inner">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2 text-stone-800">
+                <Sliders className="w-4 h-4 text-[#681C32]" />
+                <span className="font-bold text-xs uppercase tracking-wider text-[#681C32]">
+                  Measured Label Roll Dimensions (in Millimeters)
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  (Apne scale/ruler se roll naap kar yahan enter karein - automatically save ho jayega)
+                </span>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex items-center space-x-1.5 text-xs">
+                <span className="text-stone-500 font-semibold text-[11px]">Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('tvs-50x25')}
+                  className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
+                >
+                  50×25mm (2-UP)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('tvs-38x25')}
+                  className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
+                >
+                  38×25mm (2-UP)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPreset('single-50x25')}
+                  className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
+                >
+                  50×25mm (1-UP)
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-xs">
+              {/* Columns */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Columns (Labels/Row)
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="4"
+                    value={dims.columns}
+                    onChange={(e) => updateDim('columns', parseInt(e.target.value, 10) || 1)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                  />
+                  <span className="text-stone-400 text-[10px]">col</span>
+                </div>
+              </div>
+
+              {/* Label Width */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Label Width
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="15"
+                    max="108"
+                    value={dims.labelWidth}
+                    onChange={(e) => updateDim('labelWidth', parseFloat(e.target.value) || 15)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Label Height */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Label Height
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="10"
+                    max="150"
+                    value={dims.labelHeight}
+                    onChange={(e) => updateDim('labelHeight', parseFloat(e.target.value) || 10)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs text-[#681C32]"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Horizontal Gap */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Horizontal Gap
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="20"
+                    value={dims.horizontalGap}
+                    onChange={(e) => updateDim('horizontalGap', parseFloat(e.target.value) || 0)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Vertical Gap */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Vertical Gap
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="20"
+                    value={dims.verticalGap}
+                    onChange={(e) => updateDim('verticalGap', parseFloat(e.target.value) || 0)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Left Offset */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Left Offset
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="-10"
+                    max="20"
+                    value={dims.leftOffset}
+                    onChange={(e) => updateDim('leftOffset', parseFloat(e.target.value) || 0)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                    title="Nudge print left/right (Negative = Left, Positive = Right)"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+
+              {/* Top Offset */}
+              <div className="bg-white p-2 rounded-lg border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-600 uppercase mb-1">
+                  Top Offset
+                </label>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="-10"
+                    max="20"
+                    value={dims.topOffset}
+                    onChange={(e) => updateDim('topOffset', parseFloat(e.target.value) || 0)}
+                    className="w-full p-1 border border-stone-300 rounded font-mono font-bold text-center text-xs"
+                    title="Nudge print up/down (Negative = Up, Positive = Down)"
+                  />
+                  <span className="text-stone-400 text-[10px]">mm</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between text-[11px] text-stone-500">
+              <span className="flex items-center space-x-1 text-emerald-700 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Calculated Total Page Width: <strong>{totalPageWidth} mm</strong></span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setDims(DEFAULT_DIMENSIONS);
+                  localStorage.removeItem(STORAGE_KEY);
+                }}
+                className="text-stone-500 hover:text-red-600 underline cursor-pointer"
+              >
+                Reset to default (50×25mm 2-UP)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TVS Driver & Gap Sensor Calibration Banner (Requirement 9) */}
         {showHelp && (
           <div className="no-print bg-stone-900 text-stone-100 border-b border-stone-800 px-6 py-4 text-xs space-y-3">
             <div className="flex items-start justify-between">
               <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>TVS LP 46 NEO - Exact 2-Label Roll Setup</span>
+                <span>TVS LP 46 NEO / 46 IP Printer & Windows Driver Calibration Steps</span>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
@@ -329,35 +639,41 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] text-stone-300">
               <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">1. Chrome Print (Ctrl + P) Settings</div>
+                <div className="font-bold text-amber-300 mb-1">1. Chrome / Edge Print Dialog (Ctrl + P)</div>
                 <ul className="space-y-1 list-disc list-inside">
-                  <li><strong>Destination:</strong> TVS LP 46 NEO</li>
-                  <li><strong>Layout:</strong> <span className="text-emerald-300 font-bold">PORTRAIT</span> (खड़ा / सीधा)</li>
-                  <li><strong>Paper Size:</strong> User-Defined <strong>{config.rowWidth} × 25mm</strong> (या 4" × 1")</li>
-                  <li><strong>Margins:</strong> <strong>None (शून्य)</strong></li>
-                  <li><strong>Scale:</strong> <strong>100% / Actual Size</strong></li>
+                  <li><strong>Destination:</strong> TVS LP 46 NEO / 46 IP</li>
+                  <li><strong>Layout:</strong> <span className="text-emerald-400 font-bold">PORTRAIT</span> (खड़ा / सीधा)</li>
+                  <li><strong>Paper Size:</strong> User-Defined <strong>{totalPageWidth}mm × {dims.labelHeight}mm</strong></li>
+                  <li><strong>Margins:</strong> <strong>None (शून्य)</strong> — Zero margins ensure exact alignment</li>
+                  <li><strong>Scale:</strong> <strong>100% / Actual Size</strong> (Do NOT use 'Fit to page')</li>
                 </ul>
               </div>
 
               <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">2. Rotation Fix (अगर प्रिंट आड़ा आ रहा हो)</div>
-                <p className="leading-relaxed">
-                  अगर आपके प्रिंटर में अभी भी टेक्स्ट आड़ा (90° rotated) निकल रहा हो, तो ऊपर दिए गए <strong>"Rotate 90°"</strong> बटन पर क्लिक करें। इससे प्रिंट सीधा होकर दोनों स्टिकर्स के अंदर फिट हो जाएगा!
-                </p>
+                <div className="font-bold text-amber-300 mb-1">2. Windows Printer Preferences (TVS Driver)</div>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li><strong>Media Type:</strong> Label with Gaps (Transmissive Sensor)</li>
+                  <li><strong>Print Method:</strong> Thermal Transfer (Wax/Resin Ribbon) या Direct Thermal</li>
+                  <li><strong>Print Speed:</strong> 4 ips to 6 ips (100–150 mm/s)</li>
+                  <li><strong>Darkness / Density:</strong> 9 to 11 (Deep black barcode contrast)</li>
+                </ul>
               </div>
 
               <div className="bg-stone-800/80 p-2.5 rounded-lg border border-stone-700">
-                <div className="font-bold text-amber-300 mb-1">3. Gap Sensor Auto-Calibration</div>
+                <div className="font-bold text-amber-300 mb-1">3. Gap Sensor Auto-Calibration (10 सेकंड में)</div>
                 <p className="leading-relaxed">
-                  प्रिंटर OFF करें → PAUSE/FEED दबाकर ON करें → 3 Beeps पर छोड़ें। प्रिंटर 25mm लेबल की हाइट ऑटो-कैलिब्रेट कर लेगा!
+                  अगर प्रिंटर लेबल के गैप को मिस कर रहा हो:<br/>
+                  1. प्रिंटर का पावर <strong>OFF</strong> करें。<br/>
+                  2. <strong>PAUSE/FEED</strong> बटन दबाए रखें और पावर <strong>ON</strong> करें。<br/>
+                  3. <strong>3 बीप</strong> बजने पर बटन छोड़ें। प्रिंटर {dims.labelHeight}mm लेबल की हाइट ऑटो-कैलिब्रेट कर लेगा!
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Control Toolbar */}
-        <div className="no-print bg-[#FDFBFA] border-b border-[#E9DFE2] p-4 shrink-0 space-y-3">
+        {/* Control Toolbar (Bulk Presets, Themes, Toggles) */}
+        <div className="no-print bg-[#FDFBFA] border-b border-[#E9DFE2] p-3.5 shrink-0 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Quick Bulk Presets */}
             <div className="flex items-center space-x-2 flex-wrap gap-y-1.5">
@@ -404,84 +720,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
               </button>
             </div>
 
-            {/* Layout, Size, and Rotation Options */}
+            {/* Theme & Display Options */}
             <div className="flex items-center space-x-3 flex-wrap gap-y-1.5">
+              {/* Theme Selector */}
               <div className="flex items-center space-x-1.5">
-                <Layers className="w-3.5 h-3.5 text-[#776C70]" />
-                <span className="font-bold text-[#776C70]">Roll:</span>
-                <select
-                  value={layoutMode}
-                  onChange={(e) => setLayoutMode(e.target.value as LayoutMode)}
-                  className="px-2 py-1 bg-white border border-[#681C32] rounded-lg text-xs font-bold text-[#681C32] shadow-xs cursor-pointer focus:ring-1 focus:ring-[#681C32]"
-                >
-                  <option value="tvs-2up">TVS 2-UP Roll (2 Labels Side-by-Side)</option>
-                  <option value="thermal-1up">Single Label Roll (1 Label Across)</option>
-                  <option value="a4-24">A4 Sheet — 24 Labels (3 × 8 Grid)</option>
-                  <option value="a4-40">A4 Sheet — 40 Labels (4 × 10 Grid)</option>
-                </select>
-              </div>
-
-              {/* Exact Sticker Size */}
-              {layoutMode === 'tvs-2up' && (
-                <div className="flex items-center space-x-1.5 pl-2 border-l border-[#E9DFE2]">
-                  <span className="font-bold text-[#776C70]">Size:</span>
-                  <select
-                    value={labelSize}
-                    onChange={(e) => setLabelSize(e.target.value as LabelSize)}
-                    className="px-2 py-1 bg-white border border-emerald-600 rounded-lg text-xs font-bold text-emerald-800 shadow-xs cursor-pointer focus:ring-1 focus:ring-emerald-600"
-                  >
-                    <option value="50x25">50mm × 25mm (2 Across — 104mm Web)</option>
-                    <option value="38x25">38mm × 25mm (2 Across — 79mm Web)</option>
-                    <option value="35x25">35mm × 25mm (2 Across — 73mm Web)</option>
-                  </select>
-                </div>
-              )}
-
-              {/* Instant Rotation Buttons */}
-              <div className="flex items-center space-x-1 pl-2 border-l border-[#E9DFE2]">
-                <RotateCw className="w-3.5 h-3.5 text-[#776C70]" />
-                <span className="font-bold text-[#776C70] mr-1">Rotate:</span>
-                <button
-                  type="button"
-                  onClick={() => setRotation(0)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-all ${
-                    rotation === 0
-                      ? 'bg-[#681C32] text-white shadow-xs'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-                  }`}
-                  title="Normal 0° (सीधा)"
-                >
-                  0° (Normal)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRotation(90)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-all ${
-                    rotation === 90
-                      ? 'bg-[#681C32] text-white shadow-xs'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-                  }`}
-                  title="Rotate 90° Clockwise"
-                >
-                  90°
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRotation(270)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-all ${
-                    rotation === 270
-                      ? 'bg-[#681C32] text-white shadow-xs'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:border-gray-400'
-                  }`}
-                  title="Rotate 270° (90° Counter-Clockwise)"
-                >
-                  270°
-                </button>
-              </div>
-
-              {/* Theme & Ribbon Style Selector */}
-              <div className="flex items-center space-x-1.5 pl-2 border-l border-[#E9DFE2]">
                 <Palette className="w-3.5 h-3.5 text-[#776C70]" />
+                <span className="font-bold text-[#776C70]">Theme:</span>
                 <select
                   value={themeMode}
                   onChange={(e) => setThemeMode(e.target.value as ThemeMode)}
@@ -489,12 +733,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 >
                   <option value="color">Full Color (Aavni Maroon)</option>
                   <option value="thermal-sharp">TVS Ribbon B&W (203 DPI Crisp)</option>
-                  <option value="preprinted">Pre-Printed Roll (Overlay)</option>
+                  <option value="preprinted">Pre-Printed Roll (Overlay Only)</option>
                 </select>
               </div>
 
               {/* Toggles */}
-              <div className="flex items-center space-x-2 pl-2 border-l border-[#E9DFE2]">
+              <div className="flex items-center space-x-2.5 pl-2 border-l border-[#E9DFE2]">
                 {themeMode !== 'preprinted' && (
                   <label className="flex items-center space-x-1 cursor-pointer text-[#776C70]">
                     <input
@@ -529,9 +773,9 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
 
           {/* Item-by-Item Quantity Table */}
-          <div className="max-h-32 overflow-y-auto bg-white rounded-lg border border-[#E9DFE2] divide-y divide-[#E9DFE2] text-xs">
+          <div className="max-h-28 overflow-y-auto bg-white rounded-lg border border-[#E9DFE2] divide-y divide-[#E9DFE2] text-xs">
             {labelList.map((item, idx) => (
-              <div key={idx} className="p-2 flex items-center justify-between hover:bg-[#F8F5F0]">
+              <div key={idx} className="p-1.5 px-2.5 flex items-center justify-between hover:bg-[#F8F5F0]">
                 <div className="flex-1 min-w-0 pr-4">
                   <div className="font-bold text-[#30262A] truncate">
                     {item.name}
@@ -555,7 +799,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                     <button
                       type="button"
                       onClick={() => handleUpdateQty(idx, (item.quantity || 1) - 1)}
-                      className="w-6 h-6 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-5 h-5 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
@@ -564,12 +808,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                       min="0"
                       value={item.quantity}
                       onChange={(e) => handleUpdateQty(idx, parseInt(e.target.value, 10) || 0)}
-                      className="w-12 text-center font-mono font-bold text-xs bg-transparent focus:outline-none"
+                      className="w-10 text-center font-mono font-bold text-xs bg-transparent focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => handleUpdateQty(idx, (item.quantity || 1) + 1)}
-                      className="w-6 h-6 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
+                      className="w-5 h-5 rounded bg-white text-[#30262A] hover:bg-gray-100 flex items-center justify-center font-bold cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
@@ -589,7 +833,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </div>
         </div>
 
-        {/* Live Roll Preview & Print Surface Container */}
+        {/* Multi-Row Live Print Preview (Requirement 7) */}
         <div className="flex-1 p-4 sm:p-6 bg-[#2B2326]/5 overflow-y-auto">
           {totalLabels === 0 ? (
             <div className="p-12 text-center text-sm text-[#776C70]">
@@ -597,141 +841,68 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             </div>
           ) : (
             <div className="printable-barcode-sheet mx-auto">
-              {/* TVS LP 46 NEO 2-UP Roll (2 Labels per row: 50mm x 25mm each) */}
-              {layoutMode === 'tvs-2up' && (
-                <div
-                  className="tvs-2up-sheet mx-auto space-y-3 max-w-[440px]"
-                  style={{ width: config.rowWidth }}
-                >
-                  <div className="no-print text-center text-[11px] font-mono text-[#776C70] mb-2 flex items-center justify-center space-x-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                    <span>TVS 2-UP Roll View ({config.labelWidth} × {config.labelHeight} • 2 Across • Rotation: {rotation}°)</span>
+              <div
+                className="tvs-roll-sheet mx-auto"
+                style={{
+                  width: `${totalPageWidth}mm`,
+                  paddingLeft: dims.leftOffset > 0 ? `${dims.leftOffset}mm` : '0mm',
+                  paddingTop: dims.topOffset > 0 ? `${dims.topOffset}mm` : '0mm'
+                }}
+              >
+                <div className="no-print text-center text-[11px] font-mono text-[#776C70] mb-2.5 flex items-center justify-center space-x-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  <span>
+                    Multi-Row Roll Preview ({dims.columns} Columns Across • {dims.labelWidth}mm × {dims.labelHeight}mm • Total Web: {totalPageWidth}mm)
+                  </span>
+                </div>
+
+                {rows.map((rowItems, rowIdx) => (
+                  <div
+                    key={rowIdx}
+                    className="tvs-row"
+                    style={{
+                      width: `${totalPageWidth}mm`,
+                      height: `${dims.labelHeight}mm`,
+                      marginBottom: `${dims.verticalGap}mm`,
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(${dims.columns}, ${dims.labelWidth}mm)`,
+                      columnGap: `${dims.horizontalGap}mm`,
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    {rowItems.map((cell, colIdx) => (
+                      <div
+                        key={colIdx}
+                        className={`tvs-label ${
+                          showBorder ? 'border border-gray-300' : 'border border-transparent'
+                        } ${!cell ? 'opacity-0 pointer-events-none' : ''}`}
+                        style={{
+                          width: `${dims.labelWidth}mm`,
+                          height: `${dims.labelHeight}mm`,
+                          maxWidth: `${dims.labelWidth}mm`,
+                          maxHeight: `${dims.labelHeight}mm`,
+                          boxSizing: 'border-box',
+                          overflow: 'hidden',
+                          borderRadius: '2mm'
+                        }}
+                      >
+                        {cell ? renderTagContent(cell.item, cell.tagIndex) : null}
+                      </div>
+                    ))}
                   </div>
-
-                  {tvsPairs.map((pair, pairIdx) => (
-                    <div
-                      key={pairIdx}
-                      className="tvs-2up-row flex justify-between items-center mx-auto bg-stone-100 p-0.5 rounded border border-dashed border-stone-300"
-                      style={{
-                        width: config.rowWidth,
-                        minHeight: '25mm',
-                        boxSizing: 'border-box'
-                      }}
-                    >
-                      {/* Left Sticker */}
-                      {pair[0] && (
-                        <div
-                          className={`tvs-2up-tag bg-white shadow-xs rounded-[3px] p-[1mm] flex flex-col justify-between ${
-                            showBorder ? 'border border-gray-300' : 'border border-transparent'
-                          }`}
-                          style={{
-                            width: config.labelWidth,
-                            height: config.labelHeight,
-                            minWidth: config.labelWidth,
-                            maxWidth: config.labelWidth,
-                            maxHeight: config.labelHeight,
-                            boxSizing: 'border-box',
-                            transform: rotation ? `rotate(${rotation}deg)` : undefined
-                          }}
-                        >
-                          {renderTagContent(pair[0].item, pair[0].tagIndex, true)}
-                        </div>
-                      )}
-
-                      {/* Gap Spacer between Left & Right Sticker */}
-                      <div style={{ width: config.gap, minWidth: config.gap }} />
-
-                      {/* Right Sticker */}
-                      {pair[1] ? (
-                        <div
-                          className={`tvs-2up-tag bg-white shadow-xs rounded-[3px] p-[1mm] flex flex-col justify-between ${
-                            showBorder ? 'border border-gray-300' : 'border border-transparent'
-                          }`}
-                          style={{
-                            width: config.labelWidth,
-                            height: config.labelHeight,
-                            minWidth: config.labelWidth,
-                            maxWidth: config.labelWidth,
-                            maxHeight: config.labelHeight,
-                            boxSizing: 'border-box',
-                            transform: rotation ? `rotate(${rotation}deg)` : undefined
-                          }}
-                        >
-                          {renderTagContent(pair[1].item, pair[1].tagIndex, true)}
-                        </div>
-                      ) : (
-                        /* Empty placeholder for odd label counts to maintain left alignment */
-                        <div
-                          className="tvs-2up-tag opacity-0 pointer-events-none"
-                          style={{
-                            width: config.labelWidth,
-                            height: config.labelHeight,
-                            minWidth: config.labelWidth,
-                            maxWidth: config.labelWidth
-                          }}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Single Column Thermal Roll */}
-              {layoutMode === 'thermal-1up' && (
-                <div className="thermal-1up-sheet mx-auto space-y-3 max-w-[240px]">
-                  {flattenedTags.map(({ item, tagIndex }) => (
-                    <div
-                      key={tagIndex}
-                      className={`thermal-1up-tag mx-auto bg-white shadow-xs rounded-[3px] p-[1mm] flex flex-col justify-between ${
-                        showBorder ? 'border border-gray-300' : 'border border-transparent'
-                      }`}
-                      style={{
-                        width: '50mm',
-                        height: '24mm',
-                        maxHeight: '24mm',
-                        boxSizing: 'border-box',
-                        transform: rotation ? `rotate(${rotation}deg)` : undefined
-                      }}
-                    >
-                      {renderTagContent(item, tagIndex, true)}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* A4 Sheet Grid Layouts */}
-              {(layoutMode === 'a4-24' || layoutMode === 'a4-40') && (
-                <div
-                  className={`a4-sheet bg-white p-4 shadow-sm border border-gray-200 mx-auto ${
-                    layoutMode === 'a4-40'
-                      ? 'grid grid-cols-4 gap-2 max-w-4xl'
-                      : 'grid grid-cols-3 gap-3 max-w-4xl'
-                  }`}
-                >
-                  {flattenedTags.map(({ item, tagIndex }) => (
-                    <div
-                      key={tagIndex}
-                      className={`a4-tag bg-white p-2 rounded flex flex-col justify-between ${
-                        showBorder ? 'border border-gray-300' : 'border border-transparent'
-                      }`}
-                      style={{ minHeight: '32mm', boxSizing: 'border-box' }}
-                    >
-                      {renderTagContent(item, tagIndex, false)}
-                    </div>
-                  ))}
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Embedded Dynamic Print CSS - size: auto prevents Chrome from forcing 90 degree rotation! */}
+      {/* Embedded Dynamic Print CSS - Strictly Configured to Actual Label Layout (Requirement 6, 10) */}
       <style>{`
         @media print {
           @page {
             size: auto;
-            margin: 0mm;
+            margin: 0mm !important;
           }
 
           * {
@@ -741,8 +912,8 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           }
 
           html, body {
-            margin: 0 !important;
-            padding: 0 !important;
+            margin: 0mm !important;
+            padding: 0mm !important;
             background: #ffffff !important;
             width: 100% !important;
           }
@@ -762,97 +933,59 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
           .printable-barcode-sheet {
             position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            left: 0mm !important;
+            top: 0mm !important;
+            margin: 0mm !important;
+            padding: 0mm !important;
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
             width: 100% !important;
           }
 
-          /* TVS LP 46 NEO 2-UP ROLL PRINT RULES */
-          .tvs-2up-sheet {
-            width: ${config.rowWidth} !important;
-            margin: 0 !important;
-            padding: 0 !important;
+          .tvs-roll-sheet {
+            width: ${totalPageWidth}mm !important;
+            margin: 0mm !important;
+            padding-left: ${dims.leftOffset}mm !important;
+            padding-top: ${dims.topOffset}mm !important;
             background: transparent !important;
           }
 
-          .tvs-2up-row {
-            width: ${config.rowWidth} !important;
-            height: 25mm !important;
-            max-height: 25mm !important;
-            display: flex !important;
-            flex-direction: row !important;
-            justify-content: space-between !important;
-            align-items: stretch !important;
+          /* Exact Row Progression: One Physical Feed per Row */
+          .tvs-row {
+            width: ${totalPageWidth}mm !important;
+            height: ${dims.labelHeight}mm !important;
+            max-height: ${dims.labelHeight}mm !important;
+            display: grid !important;
+            grid-template-columns: repeat(${dims.columns}, ${dims.labelWidth}mm) !important;
+            column-gap: ${dims.horizontalGap}mm !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             overflow: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            margin: 0mm 0mm ${dims.verticalGap}mm 0mm !important;
+            padding: 0mm !important;
             background: transparent !important;
             border: none !important;
             box-sizing: border-box !important;
           }
 
-          .tvs-2up-tag {
-            width: ${config.labelWidth} !important;
-            min-width: ${config.labelWidth} !important;
-            max-width: ${config.labelWidth} !important;
-            height: ${config.labelHeight} !important;
-            max-height: ${config.labelHeight} !important;
+          /* Exact Column Positioning */
+          .tvs-label {
+            width: ${dims.labelWidth}mm !important;
+            min-width: ${dims.labelWidth}mm !important;
+            max-width: ${dims.labelWidth}mm !important;
+            height: ${dims.labelHeight}mm !important;
+            max-height: ${dims.labelHeight}mm !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             padding: 0.6mm 1mm !important;
             background: #ffffff !important;
-            border-radius: 2mm !important;
+            border-radius: 1.5mm !important;
             ${showBorder ? 'border: 0.5px solid #d1d5db !important;' : 'border: none !important;'}
-            ${rotation ? `transform: rotate(${rotation}deg) !important;` : ''}
-          }
-
-          /* SINGLE LABEL ROLL PRINT RULES */
-          .thermal-1up-sheet {
-            width: 50mm !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          .thermal-1up-tag {
-            width: 50mm !important;
-            height: 25mm !important;
-            max-height: 25mm !important;
-            page-break-after: always !important;
-            break-after: page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            box-sizing: border-box !important;
-            overflow: hidden !important;
-            padding: 0.8mm 1.2mm !important;
-            background: #ffffff !important;
-            ${showBorder ? 'border: 0.5px solid #d1d5db !important;' : 'border: none !important;'}
-            ${rotation ? `transform: rotate(${rotation}deg) !important;` : ''}
-          }
-
-          /* A4 PRINT RULES */
-          .a4-sheet {
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-
-          .a4-tag {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            ${showBorder ? 'border: 0.5px dashed #ccc !important;' : 'border: none !important;'}
           }
         }
       `}</style>
