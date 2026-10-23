@@ -64,6 +64,14 @@
     display: none !important;
   }
 
+  /* When barcode label modal is open, strictly hide the background app */
+  body.barcode-print-active #root,
+  body.barcode-print-active main,
+  body.barcode-print-active .min-h-screen,
+  body.barcode-print-active > div:not(#aavni-barcode-portal) {
+    display: none !important;
+  }
+
   .print-only {
     display: block !important;
   }

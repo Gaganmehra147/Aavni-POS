@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import JsBarcode from 'jsbarcode';
 import { formatINR } from '../../lib/currency';
 import {
@@ -95,6 +96,14 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
 
   // Test Print mode (1 row only = columns labels)
   const [isTestPrint, setIsTestPrint] = useState(false);
+
+  // Set body print state when barcode modal is open
+  useEffect(() => {
+    document.body.classList.add('barcode-print-active');
+    return () => {
+      document.body.classList.remove('barcode-print-active');
+    };
+  }, []);
 
   // Save dimensions to localStorage whenever changed
   const updateDim = (key: keyof LabelDimensions, value: number) => {
@@ -290,8 +299,11 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+  return createPortal(
+    <div
+      id="aavni-barcode-portal"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
+    >
       <div className="bg-white rounded-2xl w-full max-w-6xl shadow-2xl border border-[#E9DFE2] overflow-hidden my-4 flex flex-col max-h-[95vh]">
         {/* Modal Header */}
         <div className="no-print bg-[#681C32] px-6 py-3.5 text-white flex items-center justify-between shrink-0 shadow-sm">
@@ -829,6 +841,12 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
       {/* Embedded Dynamic Print CSS - Strictly Configured to 103.5mm Roll & Exact Label Layout */}
       <style>{`
         @media print {
+          /* HIDE the entire normal React App (#root) and all background pages */
+          #root,
+          body > *:not(#aavni-barcode-portal) {
+            display: none !important;
+          }
+
           @page {
             size: auto;
             margin: 0mm !important;
@@ -853,36 +871,48 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
             image-rendering: crisp-edges !important;
           }
 
-          /* Hide Everything outside the printable roll */
-          .no-print,
-          header,
-          aside,
-          nav,
-          button,
-          .fixed,
-          .backdrop-blur-xs {
-            display: none !important;
-          }
-
-          /* Reset all parent wrappers */
-          body > div,
-          main,
-          div {
-            box-shadow: none !important;
-            background: transparent !important;
-          }
-
-          .max-w-6xl {
-            max-width: none !important;
+          /* Display the barcode portal cleanly */
+          #aavni-barcode-portal {
+            display: block !important;
+            position: static !important;
+            inset: auto !important;
+            width: ${dims.rollWidth}mm !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
-            width: ${dims.rollWidth}mm !important;
+            overflow: visible !important;
           }
 
+          /* Hide modal controls, toolbar, headers, configuration panels, buttons */
+          .no-print,
+          #aavni-barcode-portal .no-print,
+          header,
+          aside,
+          nav,
+          button,
+          input,
+          select {
+            display: none !important;
+          }
+
+          /* Flatten modal card wrapper to plain transparent block of exact rollWidth */
+          #aavni-barcode-portal > div {
+            max-width: none !important;
+            width: ${dims.rollWidth}mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
+          }
+
+          /* Ensure roll sheet is positioned at exact rollWidth and margins */
           .tvs-roll-sheet {
+            display: block !important;
             width: ${dims.rollWidth}mm !important;
             margin: 0mm !important;
             padding-left: ${dims.leftMargin}mm !important;
@@ -929,6 +959,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
