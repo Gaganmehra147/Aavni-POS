@@ -394,6 +394,7 @@ export async function initDatabase() {
       ['Kurtis', 'Everyday, cotton, printed, and festive casual kurtis'],
       ['Kurta Sets', 'Coordinated kurti with pant/palazzo and dupatta'],
       ['Anarkali Suits', 'Floor-length and flared heavy festive Anarkalis'],
+      ['Unstitched Suit', 'Unstitched suit pieces, fabric sets, and dress materials'],
       ['Sarees', 'Banarasi, Chanderi, Kanjivaram, Georgette, Silk sarees'],
       ['Lehengas', 'Bridal, party wear, and sangeet designer lehengas'],
       ['Dupattas', 'Banarasi, Chiffon, Bandhani, and Organza dupattas'],
@@ -404,6 +405,17 @@ export async function initDatabase() {
     ];
     for (const [name, desc] of defaultCats) {
       await run('INSERT INTO categories (name, description) VALUES (?, ?)', [name, desc]);
+    }
+  } else {
+    // Ensure Unstitched Suit exists even if categories already seeded
+    const unstitched = await queryOne<{ id: number }>(
+      "SELECT id FROM categories WHERE LOWER(name) IN ('unstitched suit', 'unstitched suits')"
+    );
+    if (!unstitched) {
+      await run('INSERT INTO categories (name, description) VALUES (?, ?)', [
+        'Unstitched Suit',
+        'Unstitched suit pieces, fabric sets, and dress materials'
+      ]);
     }
   }
 }

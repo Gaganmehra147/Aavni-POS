@@ -7,6 +7,16 @@ const router = Router();
 // Get categories
 router.get('/categories', requireAuth, async (req: Request, res: Response) => {
   try {
+    const unstitched = await queryOne<{ id: number }>(
+      "SELECT id FROM categories WHERE LOWER(name) IN ('unstitched suit', 'unstitched suits')"
+    );
+    if (!unstitched) {
+      await run('INSERT INTO categories (name, description) VALUES (?, ?)', [
+        'Unstitched Suit',
+        'Unstitched suit pieces, fabric sets, and dress materials'
+      ]);
+    }
+
     const categories = await queryAll('SELECT * FROM categories ORDER BY name ASC');
     res.json({ categories });
   } catch (error: any) {

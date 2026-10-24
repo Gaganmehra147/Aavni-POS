@@ -337,7 +337,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 onClick={() => generateSizes(['Free Size'])}
                 className="px-2.5 py-1 bg-white border border-[#E9DFE2] text-xs font-semibold rounded hover:bg-[#681C32] hover:text-white"
               >
-                Saree (Free Size)
+                Saree / Unstitched (Free Size)
               </button>
               <button
                 type="button"

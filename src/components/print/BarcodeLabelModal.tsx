@@ -41,29 +41,29 @@ interface BarcodeLabelModalProps {
   onClose: () => void;
 }
 
-// Storage key for persisting calibrated dimensions (80mm confirmed default)
-const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v7_80mm_narrow';
+// Storage key for persisting calibrated dimensions (4.00" x 1.00" roll default)
+const STORAGE_KEY = 'aavni_tvs_printer_dimensions_v8_4x1inch_crisp_lines';
 
 export interface LabelDimensions {
-  rollWidth: number;      // e.g. 80 (in mm total media width)
-  labelWidth: number;     // e.g. 35 (in mm individual label width)
-  labelHeight: number;    // e.g. 25 (in mm individual label height)
+  rollWidth: number;      // e.g. 101.6 (4.00 inches in mm)
+  labelWidth: number;     // e.g. 48 (in mm individual label width)
+  labelHeight: number;    // e.g. 25.4 (1.00 inch in mm)
   columns: number;        // e.g. 2 (columns across)
-  horizontalGap: number;  // e.g. 4 (in mm between columns)
-  leftMargin: number;     // e.g. 3 (in mm left side margin/offset)
-  verticalGap: number;    // e.g. 0 (in mm vertical gap between rows)
+  horizontalGap: number;  // e.g. 2.5 (in mm between columns)
+  leftMargin: number;     // e.g. 1.5 (in mm left side margin/offset)
+  verticalGap: number;    // e.g. 2.5 (in mm vertical gap between rows)
   topOffset: number;      // e.g. 0 (in mm top offset)
 }
 
-// Default initial values: 80mm roll, 35x25mm labels, 2 columns, 4mm gap, 3mm left margin
+// Default initial values: 4.00" x 1.00" roll (101.6mm x 25.4mm), 2 columns (48x25.4mm)
 const DEFAULT_DIMENSIONS: LabelDimensions = {
-  rollWidth: 80,
-  labelWidth: 35,
-  labelHeight: 25,
+  rollWidth: 101.6,
+  labelWidth: 48,
+  labelHeight: 25.4,
   columns: 2,
-  horizontalGap: 4,
-  leftMargin: 3,
-  verticalGap: 0,
+  horizontalGap: 2.5,
+  leftMargin: 1.5,
+  verticalGap: 2.5,
   topOffset: 0
 };
 
@@ -118,16 +118,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
     });
   };
 
-  const handleApplyPreset = (preset: 'tvs-80mm-35x25' | 'tvs-103.5mm-41x23' | 'tvs-104mm-50x25' | 'tvs-single-50x25') => {
+  const handleApplyPreset = (preset: 'tvs-4x1inch-2up' | 'tvs-80mm-35x25' | 'tvs-104mm-50x25' | 'tvs-4x1inch-single') => {
     let newDims: LabelDimensions;
-    if (preset === 'tvs-80mm-35x25') {
+    if (preset === 'tvs-4x1inch-2up') {
+      newDims = { rollWidth: 101.6, labelWidth: 48, labelHeight: 25.4, columns: 2, horizontalGap: 2.5, leftMargin: 1.5, verticalGap: 2.5, topOffset: 0 };
+    } else if (preset === 'tvs-80mm-35x25') {
       newDims = { rollWidth: 80, labelWidth: 35, labelHeight: 25, columns: 2, horizontalGap: 4, leftMargin: 3, verticalGap: 0, topOffset: 0 };
-    } else if (preset === 'tvs-103.5mm-41x23') {
-      newDims = { rollWidth: 103.5, labelWidth: 41, labelHeight: 23, columns: 2, horizontalGap: 0, leftMargin: 12, verticalGap: 2.5, topOffset: 0 };
     } else if (preset === 'tvs-104mm-50x25') {
       newDims = { rollWidth: 104, labelWidth: 50, labelHeight: 25, columns: 2, horizontalGap: 3, leftMargin: 0.5, verticalGap: 2.5, topOffset: 0 };
     } else {
-      newDims = { rollWidth: 50, labelWidth: 50, labelHeight: 25, columns: 1, horizontalGap: 0, leftMargin: 0, verticalGap: 2.5, topOffset: 0 };
+      newDims = { rollWidth: 101.6, labelWidth: 101.6, labelHeight: 25.4, columns: 1, horizontalGap: 0, leftMargin: 0, verticalGap: 2.5, topOffset: 0 };
     }
     setDims(newDims);
     try {
@@ -162,16 +162,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           const el = document.getElementById(svgId);
           if (el) {
             try {
-              // Clean retail barcode with tall bars & numbers below matching reference image
+              // Clean retail barcode with thin crisp lines, clear spaces & quiet zone for instant scanning
               JsBarcode(el, item.barcode || item.design_code || '0000000000', {
                 format: 'CODE128',
-                width: 1, // Integer 1px module width
-                height: 36, // Tall vertical bars (not flat/wide)
-                displayValue: true, // Numbers displayed right below the bars like user reference image
+                width: 1, // Integer 1px module width - prevents bleeding/over-darkening
+                height: 34, // Tall vertical lines
+                displayValue: true, // Numbers displayed right below the bars
                 font: 'monospace',
                 fontSize: 8.5,
-                textMargin: 1.5,
-                margin: 0,
+                textMargin: 2,
+                margin: 4, // 4px quiet zone around barcode so scanners can latch on
                 background: '#ffffff',
                 lineColor: '#000000'
               });
@@ -280,16 +280,16 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
           </span>
         </div>
 
-        {/* Center: Narrow, Compact Barcode with numbers below (matching user reference image) */}
+        {/* Center: Thin Clean Lines Barcode with White Quiet Zone (NOT dark/bleeding, easily scannable) */}
         <div className="flex flex-col items-center justify-center my-auto overflow-hidden w-full">
-          <div className="flex justify-center items-center max-w-[24mm] w-auto mx-auto overflow-hidden">
+          <div className="flex justify-center items-center max-w-[32mm] w-auto mx-auto overflow-hidden bg-white px-2 py-0.5">
             <svg
               id={`barcode-svg-${tagIndex}`}
               className="block mx-auto"
               style={{
                 shapeRendering: 'crispEdges',
-                maxWidth: '24mm',
-                height: '13.5mm'
+                maxWidth: '30mm',
+                height: '14mm'
               }}
             ></svg>
           </div>
@@ -409,17 +409,17 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 <span className="text-stone-500 font-semibold text-[11px]">Roll Presets:</span>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-80mm-35x25')}
+                  onClick={() => handleApplyPreset('tvs-4x1inch-2up')}
                   className="px-2 py-0.5 bg-emerald-50 border border-emerald-400 text-emerald-900 rounded text-[11px] font-bold cursor-pointer"
                 >
-                  ★ 80mm Roll (35×25mm 2-UP)
+                  ★ 4.00" × 1.00" Roll (101.6×25.4mm 2-UP)
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-103.5mm-41x23')}
+                  onClick={() => handleApplyPreset('tvs-80mm-35x25')}
                   className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
                 >
-                  103.5mm Roll (41×23mm 2-UP)
+                  80mm Roll (35×25mm 2-UP)
                 </button>
                 <button
                   type="button"
@@ -430,10 +430,10 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('tvs-single-50x25')}
+                  onClick={() => handleApplyPreset('tvs-4x1inch-single')}
                   className="px-2 py-0.5 bg-white border border-stone-300 hover:border-[#681C32] rounded text-[11px] font-semibold text-stone-700 cursor-pointer"
                 >
-                  Single (50×25mm 1-UP)
+                  Single 4"×1" (1-UP)
                 </button>
               </div>
             </div>
@@ -614,7 +614,7 @@ export const BarcodeLabelModal: React.FC<BarcodeLabelModalProps> = ({ items: ini
                 }}
                 className="text-stone-500 hover:text-red-600 underline cursor-pointer"
               >
-                Reset to 103.5mm / 41×23mm
+                Reset to 4.00" × 1.00" (101.6×25.4mm)
               </button>
             </div>
           </div>
