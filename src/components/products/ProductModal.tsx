@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Category, Supplier } from '../../types';
+import { api } from '../../lib/api';
 import { X, Plus, Trash2, Sparkles, Barcode, Percent, TrendingUp, Sparkle } from 'lucide-react';
 
 interface ProductModalProps {
