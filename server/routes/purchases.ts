@@ -14,18 +14,28 @@ router.get('/suppliers', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Add Supplier
+// Add / Quick Create Supplier
 router.post('/suppliers', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
   try {
     const { name, contact_person, phone, email, address, city, state, state_code, gstin } = req.body;
-    if (!name) return res.status(400).json({ error: 'Supplier name is required' });
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Supplier name is required' });
+
+    const trimmedName = name.trim();
+    const existing = await queryOne<{ id: number; name: string }>(
+      'SELECT id, name FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(?)',
+      [trimmedName]
+    );
+
+    if (existing) {
+      return res.status(200).json({ id: existing.id, name: existing.name, message: 'Supplier already exists' });
+    }
 
     const info = await run(`
       INSERT INTO suppliers (
         name, contact_person, phone, email, address, city, state, state_code, gstin
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      name.trim(),
+      trimmedName,
       contact_person || null,
       phone || null,
       email || null,
@@ -36,7 +46,37 @@ router.post('/suppliers', requireAuth, requireRole('admin', 'manager'), async (r
       gstin ? gstin.trim().toUpperCase() : null
     ]);
 
-    res.status(201).json({ id: info.lastInsertRowid, message: 'Supplier created successfully' });
+    res.status(201).json({ id: info.lastInsertRowid, name: trimmedName, message: 'Supplier created successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update Supplier
+router.put('/suppliers/:id', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, contact_person, phone, email, address, city, state, state_code, gstin } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Supplier name is required' });
+
+    await run(`
+      UPDATE suppliers SET
+        name = ?, contact_person = ?, phone = ?, email = ?, address = ?, city = ?, state = ?, state_code = ?, gstin = ?
+      WHERE id = ?
+    `, [
+      name.trim(),
+      contact_person || null,
+      phone || null,
+      email || null,
+      address || null,
+      city || null,
+      state || 'Madhya Pradesh',
+      state_code || '23',
+      gstin ? gstin.trim().toUpperCase() : null,
+      id
+    ]);
+
+    res.json({ message: 'Supplier updated successfully', id: Number(id), name: name.trim() });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

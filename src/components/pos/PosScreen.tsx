@@ -20,7 +20,9 @@ import {
   Sparkles,
   AlertTriangle,
   RotateCcw,
-  Smartphone
+  Smartphone,
+  Tag,
+  X
 } from 'lucide-react';
 
 interface PosScreenProps {
@@ -57,6 +59,13 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
 
   // Success dialog after sale
   const [lastSaleResult, setLastSaleResult] = useState<{ invoiceId: number; invoiceNumber: string; grandTotal: number } | null>(null);
+
+  // Style / Design Code Lookup State
+  const [styleCodeInput, setStyleCodeInput] = useState('');
+  const [styleCodeLoading, setStyleCodeLoading] = useState(false);
+  const [styleLookupData, setStyleLookupData] = useState<{ product: any; variants: ProductVariant[] } | null>(null);
+  const [showStyleModal, setShowStyleModal] = useState(false);
+  const [styleNotification, setStyleNotification] = useState<string | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,23 +124,75 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reusable Barcode Processor
+  // Reusable Barcode & Style Code Processor
   const processBarcodeScan = async (code: string) => {
     const clean = code.trim();
     if (!clean) return;
 
     try {
-      const data = await api.get<{ variant: ProductVariant }>(`/products/variants/by-barcode/${encodeURIComponent(clean)}`);
+      const data = await api.get<{ variant?: ProductVariant; multipleVariants?: boolean; variants?: ProductVariant[] }>(
+        `/products/variants/by-barcode/${encodeURIComponent(clean)}`
+      );
       if (data.variant) {
         addVariantToCart(data.variant);
+        flashStyleNotification(`Added: ${data.variant.product_name} (${data.variant.size})`);
+        setBarcodeInput('');
+      } else if (data.multipleVariants && data.variants && data.variants.length > 0) {
+        setStyleLookupData({
+          product: {
+            name: data.variants[0].product_name,
+            design_code: data.variants[0].design_code,
+            brand: data.variants[0].brand,
+            fabric: data.variants[0].fabric,
+            gst_rate: data.variants[0].gst_rate
+          },
+          variants: data.variants
+        });
+        setShowStyleModal(true);
         setBarcodeInput('');
       } else {
-        alert(`Barcode ${clean} not found in catalog.`);
+        alert(`Barcode or Style Code "${clean}" not found in catalog.`);
       }
     } catch (err: any) {
-      alert(`Barcode Scan Error: ${err.message || 'Variant not found'}`);
+      alert(`Scan / Look Up Error: ${err.message || 'Variant not found'}`);
     }
     focusScanner();
+  };
+
+  // Lookup by Style / Design Code
+  const lookupStyleCode = async (code: string) => {
+    const clean = code.trim();
+    if (!clean) return;
+    setStyleCodeLoading(true);
+    try {
+      const data = await api.get<{ product: any; variants: ProductVariant[] }>(
+        `/products/by-design-code/${encodeURIComponent(clean)}`
+      );
+      if (data && data.product && data.variants) {
+        if (data.variants.length === 1) {
+          addVariantToCart(data.variants[0]);
+          flashStyleNotification(`Added to bill: ${data.product.name} (${data.variants[0].size}) - ${formatINR(data.variants[0].selling_price)}`);
+          setStyleCodeInput('');
+        } else {
+          setStyleLookupData(data);
+          setShowStyleModal(true);
+        }
+      } else {
+        alert(`Style code "${clean}" not found.`);
+      }
+    } catch (err: any) {
+      alert(`Style Code Look Up: ${err.message || 'Style code not found'}`);
+    } finally {
+      setStyleCodeLoading(false);
+      focusScanner();
+    }
+  };
+
+  const flashStyleNotification = (msg: string) => {
+    setStyleNotification(msg);
+    setTimeout(() => {
+      setStyleNotification(null);
+    }, 3500);
   };
 
   // Handle Barcode Scan Form
@@ -405,10 +466,20 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
     <div className="h-[calc(100vh-4rem)] flex flex-col lg:flex-row overflow-hidden bg-[#F8F5F0]">
       {/* LEFT SECTION: Scanner, Product Search, and Cart Table */}
       <div className="flex-1 flex flex-col border-r border-[#E9DFE2] overflow-hidden">
-        {/* Top Barcode and Search Header */}
-        <div className="p-4 bg-white border-b border-[#E9DFE2] flex items-center space-x-3 shrink-0 shadow-xs">
+        {/* Top Notification Toast */}
+        {styleNotification && (
+          <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md">
+            <span>✓ {styleNotification}</span>
+            <button type="button" onClick={() => setStyleNotification(null)} className="cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Top Barcode, Style Code, and Search Header */}
+        <div className="p-4 bg-white border-b border-[#E9DFE2] flex items-center space-x-3 shrink-0 shadow-xs flex-wrap gap-y-2">
           {/* Continuous Barcode Scanner Form */}
-          <form onSubmit={handleBarcodeSubmit} className="flex-1 relative">
+          <form onSubmit={handleBarcodeSubmit} className="flex-1 min-w-[280px] relative">
             <div className="relative">
               <Barcode className="w-5 h-5 text-[#681C32] absolute left-3 top-2.5" />
               <input
@@ -416,7 +487,7 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
                 type="text"
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
-                placeholder="Scan product barcode (USB scanner ready) or hit Enter..."
+                placeholder="Scan barcode or type Style Code (e.g. AVN1001)..."
                 className="w-full pl-10 pr-56 py-2 bg-[#F8F5F0] border-2 border-[#E9DFE2] focus:border-[#681C32] rounded-lg text-sm font-mono text-[#30262A] focus:outline-none focus:bg-white transition-all shadow-inner"
               />
               <div className="absolute right-1.5 top-1.5 flex items-center space-x-1.5">
@@ -439,8 +510,36 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
             </div>
           </form>
 
+          {/* Dedicated Style / Design Code Look-Up Form */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (styleCodeInput.trim()) lookupStyleCode(styleCodeInput);
+            }}
+            className="w-60 relative"
+          >
+            <div className="relative">
+              <Tag className="w-4 h-4 text-[#681C32] absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={styleCodeInput}
+                onChange={(e) => setStyleCodeInput(e.target.value.toUpperCase())}
+                placeholder="Style Code (AVN1001)..."
+                className="w-full pl-8 pr-16 py-2 bg-[#F6EBF0] border-2 border-[#681C32]/40 focus:border-[#681C32] rounded-lg text-xs font-mono font-bold text-[#681C32] uppercase focus:outline-none focus:bg-white transition-all shadow-2xs"
+              />
+              <button
+                type="submit"
+                disabled={styleCodeLoading}
+                className="absolute right-1 top-1 px-2.5 py-1 bg-[#681C32] hover:bg-[#501426] text-white rounded text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                title="Style Code se bill banayein ya details dekhein"
+              >
+                {styleCodeLoading ? '...' : 'Bill'}
+              </button>
+            </div>
+          </form>
+
           {/* Quick Product Search */}
-          <div className="w-72 relative">
+          <div className="w-64 relative">
             <Search className="w-4 h-4 text-[#776C70] absolute left-3 top-2.5" />
             <input
               type="text"
@@ -912,6 +1011,116 @@ export const PosScreen: React.FC<PosScreenProps> = ({ onPrintInvoice }) => {
             >
               Start Next Sale
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Style Code Product Details Modal */}
+      {showStyleModal && styleLookupData && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-[#E9DFE2] overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-[#681C32] px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 bg-amber-400 text-[#30262A] text-xs font-mono font-bold rounded">
+                    {styleLookupData.product.design_code}
+                  </span>
+                  <h3 className="font-serif font-bold text-lg">{styleLookupData.product.name}</h3>
+                </div>
+                <p className="text-xs text-white/80 mt-0.5">
+                  Brand: {styleLookupData.product.brand || 'Aavni'} • Fabric: {styleLookupData.product.fabric || 'Ethnic'} • GST: {styleLookupData.product.gst_rate}%
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStyleModal(false)}
+                className="p-1 rounded-lg hover:bg-white/10 text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Variants Grid */}
+            <div className="p-6">
+              <h4 className="text-xs font-bold text-[#30262A] uppercase tracking-wider mb-3 flex items-center justify-between">
+                <span>Select Size / Variant to Add to Bill:</span>
+                <span className="text-[11px] text-[#776C70] font-normal">
+                  {styleLookupData.variants.length} variant(s) available
+                </span>
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto">
+                {styleLookupData.variants.map((v) => {
+                  const inCart = cartItems.find((ci) => ci.variant_id === v.id);
+                  const isOutOfStock = v.stock_quantity <= 0;
+
+                  return (
+                    <div
+                      key={v.id}
+                      className="p-3 border rounded-xl border-[#E9DFE2] hover:border-[#681C32] bg-[#FDFBFA] hover:bg-white transition-all flex flex-col justify-between shadow-2xs"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-0.5 bg-[#681C32] text-white text-xs font-bold rounded">
+                              {v.size}
+                            </span>
+                            <span className="text-xs font-semibold text-[#30262A]">{v.color}</span>
+                          </div>
+                          <div className="font-mono text-[11px] text-[#776C70] mt-1">
+                            SKU: {v.sku}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono font-bold text-sm text-[#681C32]">
+                            {formatINR(v.selling_price)}
+                          </div>
+                          {v.mrp && v.mrp > v.selling_price && (
+                            <div className="font-mono text-[10px] text-[#776C70] line-through">
+                              {formatINR(v.mrp)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#E9DFE2]">
+                        <span className={`text-[11px] font-semibold ${
+                          isOutOfStock ? 'text-red-600' : 'text-emerald-700'
+                        }`}>
+                          {isOutOfStock ? 'Out of Stock (0)' : `In Stock: ${v.stock_quantity}`}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            addVariantToCart(v);
+                            flashStyleNotification(`Added: ${styleLookupData.product.name} (${v.size})`);
+                          }}
+                          className="px-3 py-1 bg-[#681C32] hover:bg-[#501426] text-white text-xs font-bold rounded-lg flex items-center space-x-1 shadow-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{inCart ? `Add More (${inCart.quantity})` : 'Add to Bill'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between mt-5 pt-3 border-t border-[#E9DFE2]">
+                <span className="text-xs text-[#776C70]">
+                  Cart items: {cartItems.reduce((acc, it) => acc + it.quantity, 0)} pcs
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowStyleModal(false)}
+                  className="px-5 py-2 bg-[#681C32] text-white rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

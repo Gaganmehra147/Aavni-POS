@@ -134,11 +134,66 @@ router.get('/variants/search', requireAuth, async (req: Request, res: Response) 
   }
 });
 
-// Quick barcode exact lookup (for instant POS scanner hit)
+// Lookup product & variants by Design/Style Code (for POS quick billing)
+router.get('/by-design-code/:code', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const rawCode = (req.params.code || '').trim();
+    if (!rawCode) return res.status(400).json({ error: 'Style code is required' });
+
+    // Try exact design_code first
+    let product = await queryOne(`
+      SELECT p.*, c.name as category_name, s.name as supplier_name
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE p.is_active = 1 AND LOWER(TRIM(p.design_code)) = LOWER(TRIM(?))
+      LIMIT 1
+    `, [rawCode]);
+
+    // If not found, try without hyphens / spaces or partial match
+    if (!product) {
+      const sanitized = rawCode.replace(/[^a-zA-Z0-9]/g, '');
+      product = await queryOne(`
+        SELECT p.*, c.name as category_name, s.name as supplier_name
+        FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN suppliers s ON p.supplier_id = s.id
+        WHERE p.is_active = 1 AND (
+          REPLACE(REPLACE(LOWER(p.design_code), '-', ''), ' ', '') = LOWER(?)
+          OR LOWER(p.design_code) LIKE ?
+          OR LOWER(p.name) LIKE ?
+        )
+        LIMIT 1
+      `, [sanitized, `%${rawCode.toLowerCase()}%`, `%${rawCode.toLowerCase()}%`]);
+    }
+
+    if (!product) {
+      return res.status(404).json({ error: `Style code "${rawCode}" not found` });
+    }
+
+    const variants = await queryAll(`
+      SELECT v.*, 
+        p.name as product_name, p.brand, p.design_code, p.fabric, p.hsn_code, p.gst_rate,
+        c.name as category_name
+      FROM product_variants v
+      JOIN products p ON v.product_id = p.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE v.product_id = ? AND v.is_active = 1
+      ORDER BY v.id ASC
+    `, [product.id]);
+
+    res.json({ product, variants });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Quick barcode / SKU / Style code lookup (for instant POS scanner hit)
 router.get('/variants/by-barcode/:barcode', requireAuth, async (req: Request, res: Response) => {
   try {
     const barcode = req.params.barcode.trim();
-    const variant = await queryOne(`
+    // 1. Try direct barcode or SKU match
+    let variant = await queryOne(`
       SELECT v.*, 
         p.name as product_name, p.brand, p.design_code, p.fabric, p.hsn_code, p.gst_rate,
         c.name as category_name
@@ -149,8 +204,33 @@ router.get('/variants/by-barcode/:barcode', requireAuth, async (req: Request, re
       LIMIT 1
     `, [barcode, barcode]);
 
+    // 2. If not found, check if barcode entered is actually a style / design code!
     if (!variant) {
-      return res.status(404).json({ error: `No active product found with barcode/SKU: ${barcode}` });
+      const byDesign = await queryAll(`
+        SELECT v.*, 
+          p.name as product_name, p.brand, p.design_code, p.fabric, p.hsn_code, p.gst_rate,
+          c.name as category_name
+        FROM product_variants v
+        JOIN products p ON v.product_id = p.id
+        LEFT JOIN categories c ON p.category_id = c.id
+        WHERE v.is_active = 1 AND p.is_active = 1 
+          AND (
+            LOWER(TRIM(p.design_code)) = LOWER(TRIM(?))
+            OR REPLACE(REPLACE(LOWER(p.design_code), '-', ''), ' ', '') = LOWER(TRIM(?))
+          )
+        ORDER BY v.id ASC
+      `, [barcode, barcode.replace(/[^a-zA-Z0-9]/g, '')]);
+
+      if (byDesign && byDesign.length === 1) {
+        variant = byDesign[0];
+      } else if (byDesign && byDesign.length > 1) {
+        // Multiple variants exist for this design code
+        return res.json({ multipleVariants: true, variants: byDesign });
+      }
+    }
+
+    if (!variant) {
+      return res.status(404).json({ error: `No active product found with barcode, SKU or Style Code: ${barcode}` });
     }
 
     res.json({ variant });

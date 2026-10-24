@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Supplier, ProductVariant } from '../../types';
 import { api } from '../../lib/api';
 import { formatINR } from '../../lib/currency';
-import { Truck, Plus, Search, DollarSign, Eye, X, Check } from 'lucide-react';
+import { Truck, Plus, Search, DollarSign, Eye, X, Check, Edit2 } from 'lucide-react';
 
 export const PurchaseScreen: React.FC = () => {
   const [tab, setTab] = useState<'PURCHASES' | 'SUPPLIERS'>('PURCHASES');
@@ -10,13 +10,34 @@ export const PurchaseScreen: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // New Supplier Modal
+  // New / Edit Supplier Modal
   const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [suppName, setSuppName] = useState('');
   const [suppContact, setSuppContact] = useState('');
   const [suppPhone, setSuppPhone] = useState('');
   const [suppGstin, setSuppGstin] = useState('');
   const [suppCity, setSuppCity] = useState('');
+
+  const openAddSupplier = () => {
+    setEditingSupplier(null);
+    setSuppName('');
+    setSuppContact('');
+    setSuppPhone('');
+    setSuppGstin('');
+    setSuppCity('');
+    setShowAddSupplier(true);
+  };
+
+  const openEditSupplier = (s: Supplier) => {
+    setEditingSupplier(s);
+    setSuppName(s.name);
+    setSuppContact(s.contact_person || '');
+    setSuppPhone(s.phone || '');
+    setSuppGstin(s.gstin || '');
+    setSuppCity(s.city || '');
+    setShowAddSupplier(true);
+  };
 
   // New Purchase Modal
   const [showNewPurchase, setShowNewPurchase] = useState(false);
@@ -88,17 +109,28 @@ export const PurchaseScreen: React.FC = () => {
     setFoundVariants([]);
   };
 
-  const handleCreateSupplier = async (e: React.FormEvent) => {
+  const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/purchases/suppliers', {
-        name: suppName,
-        contact_person: suppContact,
-        phone: suppPhone,
-        gstin: suppGstin,
-        city: suppCity
-      });
+      if (editingSupplier) {
+        await api.put(`/purchases/suppliers/${editingSupplier.id}`, {
+          name: suppName,
+          contact_person: suppContact,
+          phone: suppPhone,
+          gstin: suppGstin,
+          city: suppCity
+        });
+      } else {
+        await api.post('/purchases/suppliers', {
+          name: suppName,
+          contact_person: suppContact,
+          phone: suppPhone,
+          gstin: suppGstin,
+          city: suppCity
+        });
+      }
       setShowAddSupplier(false);
+      setEditingSupplier(null);
       setSuppName('');
       setSuppContact('');
       setSuppPhone('');
@@ -106,7 +138,7 @@ export const PurchaseScreen: React.FC = () => {
       setSuppCity('');
       fetchData();
     } catch (err: any) {
-      alert(err.message || 'Failed to create supplier');
+      alert(err.message || 'Failed to save supplier');
     }
   };
 
@@ -183,7 +215,7 @@ export const PurchaseScreen: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button
             type="button"
-            onClick={() => setShowAddSupplier(true)}
+            onClick={openAddSupplier}
             className="px-3 py-2 bg-white border border-[#E9DFE2] rounded-lg text-xs font-semibold text-[#776C70] hover:bg-[#F6EBF0] flex items-center space-x-1.5 cursor-pointer shadow-xs"
           >
             <Plus className="w-4 h-4" />
@@ -295,14 +327,23 @@ export const PurchaseScreen: React.FC = () => {
                     <td className="p-3 text-right font-mono font-bold text-[#B42332]">
                       {formatINR(s.balance)}
                     </td>
-                    <td className="p-3 text-center">
+                    <td className="p-3 text-center space-x-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openEditSupplier(s)}
+                        className="px-2 py-1 bg-white border border-[#E9DFE2] hover:border-[#681C32] text-stone-700 hover:text-[#681C32] rounded text-xs font-semibold inline-flex items-center space-x-1 cursor-pointer"
+                        title="Edit supplier details"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           setPayingSupplier(s);
                           setPayAmount(s.balance > 0 ? s.balance : 0);
                         }}
-                        className="px-2.5 py-1 bg-[#F6EBF0] hover:bg-[#681C32] hover:text-white text-[#681C32] rounded text-xs font-semibold transition-colors"
+                        className="px-2.5 py-1 bg-[#F6EBF0] hover:bg-[#681C32] hover:text-white text-[#681C32] rounded text-xs font-semibold transition-colors cursor-pointer"
                       >
                         Record Payment
                       </button>
@@ -320,10 +361,12 @@ export const PurchaseScreen: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-[#E9DFE2]">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-serif font-bold text-base text-[#30262A]">Add New Supplier</h3>
+              <h3 className="font-serif font-bold text-base text-[#30262A]">
+                {editingSupplier ? 'Edit Supplier Details' : 'Add New Supplier'}
+              </h3>
               <button onClick={() => setShowAddSupplier(false)}><X className="w-5 h-5 text-[#776C70]" /></button>
             </div>
-            <form onSubmit={handleCreateSupplier} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveSupplier} className="space-y-3 text-xs">
               <div>
                 <label className="block text-[#776C70] font-bold mb-1">Supplier Business Name *</label>
                 <input
@@ -383,9 +426,9 @@ export const PurchaseScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#681C32] text-white rounded-lg font-bold"
+                  className="px-4 py-2 bg-[#681C32] text-white rounded-lg font-bold cursor-pointer"
                 >
-                  Save Supplier
+                  {editingSupplier ? 'Update Supplier' : 'Save Supplier'}
                 </button>
               </div>
             </form>

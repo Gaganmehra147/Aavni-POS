@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Category, Supplier } from '../../types';
 import { api } from '../../lib/api';
-import { X, Plus, Trash2, Sparkles, Barcode, Percent, TrendingUp, Sparkle } from 'lucide-react';
+import { X, Plus, Trash2, Sparkles, Barcode, Percent, TrendingUp, Sparkle, Edit2, Check } from 'lucide-react';
 
 interface ProductModalProps {
   product?: any;
@@ -29,6 +29,17 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [gstRate, setGstRate] = useState<number>(product?.gst_rate || 5.0);
   const [supplierId, setSupplierId] = useState<number | ''>(product?.supplier_id || '');
   const [description, setDescription] = useState(product?.description || '');
+
+  // Supplier management state (Manual entry & Edit option)
+  const [supplierList, setSupplierList] = useState<Supplier[]>(suppliers || []);
+  const [supplierMode, setSupplierMode] = useState<'dropdown' | 'manual'>('dropdown');
+  const [manualSupplierName, setManualSupplierName] = useState('');
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [editSuppName, setEditSuppName] = useState('');
+  const [editSuppPhone, setEditSuppPhone] = useState('');
+  const [editSuppCity, setEditSuppCity] = useState('');
+  const [editSuppGstin, setEditSuppGstin] = useState('');
+  const [savingSupplier, setSavingSupplier] = useState(false);
 
   // Margin calculation state (default 50% = 1.5x markup)
   const [globalMargin, setGlobalMargin] = useState<number>(() => {
@@ -245,12 +256,70 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setVariants(newVars);
   };
 
+  // Edit existing supplier modal handler
+  const openEditSupplierModal = (suppId: number) => {
+    const s = supplierList.find((item) => item.id === suppId);
+    if (!s) return;
+    setEditingSupplier(s);
+    setEditSuppName(s.name);
+    setEditSuppPhone(s.phone || '');
+    setEditSuppCity(s.city || '');
+    setEditSuppGstin(s.gstin || '');
+  };
+
+  const handleSaveEditedSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSupplier || !editSuppName.trim()) return;
+    setSavingSupplier(true);
+    try {
+      await api.put(`/purchases/suppliers/${editingSupplier.id}`, {
+        name: editSuppName.trim(),
+        phone: editSuppPhone.trim() || null,
+        city: editSuppCity.trim() || null,
+        gstin: editSuppGstin.trim() || null
+      });
+
+      // Update in local state
+      setSupplierList((prev) =>
+        prev.map((s) =>
+          s.id === editingSupplier.id
+            ? { ...s, name: editSuppName.trim(), phone: editSuppPhone.trim(), city: editSuppCity.trim(), gstin: editSuppGstin.trim() }
+            : s
+        )
+      );
+      setEditingSupplier(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update supplier');
+    } finally {
+      setSavingSupplier(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSubmitting(true);
 
     try {
+      // 1. Resolve supplier: if manual mode, create or find supplier by name
+      let finalSupplierId = supplierId || null;
+      if (supplierMode === 'manual' && manualSupplierName.trim()) {
+        try {
+          const sRes = await api.post<{ id: number; name: string }>('/purchases/suppliers', {
+            name: manualSupplierName.trim()
+          });
+          if (sRes?.id) {
+            finalSupplierId = sRes.id;
+            // Also append to supplierList for subsequent use
+            if (!supplierList.some((s) => s.id === sRes.id)) {
+              setSupplierList((prev) => [...prev, { id: sRes.id, name: sRes.name, balance: 0 } as any]);
+            }
+          }
+        } catch (sErr: any) {
+          console.error('Failed to auto-create manual supplier:', sErr);
+        }
+      }
+
       // Validate all variants have barcodes and SKUs
       for (let i = 0; i < variants.length; i++) {
         const v = variants[i];
@@ -269,7 +338,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         fabric: fabric.trim(),
         hsn_code: hsnCode.trim(),
         gst_rate: Number(gstRate) || 5.0,
-        supplier_id: supplierId || null,
+        supplier_id: finalSupplierId,
         description: description.trim(),
         variants
       };
@@ -412,19 +481,63 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#30262A] uppercase mb-1">
-                Supplier
-              </label>
-              <select
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
-                className="w-full px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg text-xs"
-              >
-                <option value="">None / In-house</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-[#30262A] uppercase">
+                  Supplier
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (supplierMode === 'dropdown') {
+                      setSupplierMode('manual');
+                    } else {
+                      setSupplierMode('dropdown');
+                    }
+                  }}
+                  className="text-[11px] font-bold text-[#681C32] hover:underline cursor-pointer"
+                >
+                  {supplierMode === 'dropdown' ? '+ Type Manually' : '← Choose from List'}
+                </button>
+              </div>
+
+              {supplierMode === 'dropdown' ? (
+                <div className="flex space-x-1.5">
+                  <select
+                    value={supplierId}
+                    onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
+                    className="flex-1 px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg text-xs"
+                  >
+                    <option value="">None / In-house</option>
+                    {supplierList.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  {supplierId ? (
+                    <button
+                      type="button"
+                      onClick={() => openEditSupplierModal(Number(supplierId))}
+                      className="px-2.5 py-1.5 bg-white border border-[#E9DFE2] hover:border-[#681C32] text-[#681C32] rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                      title="Edit selected supplier details"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={manualSupplierName}
+                    onChange={(e) => setManualSupplierName(e.target.value)}
+                    placeholder="Enter supplier name manually (e.g. Surat Fabrics)..."
+                    className="w-full px-3 py-2 bg-white border-2 border-amber-400 rounded-lg text-xs font-bold text-[#30262A] focus:outline-none focus:border-[#681C32]"
+                  />
+                  <span className="text-[10px] text-amber-800 mt-0.5 block font-semibold">
+                    ✓ Product save hone par ye supplier automatically save ho jayega
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -698,6 +811,77 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Edit Supplier Modal */}
+      {editingSupplier && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-[#E9DFE2]">
+            <div className="flex justify-between items-center mb-4 border-b pb-2">
+              <h3 className="font-serif font-bold text-base text-[#30262A]">Edit Supplier Details</h3>
+              <button type="button" onClick={() => setEditingSupplier(null)}>
+                <X className="w-5 h-5 text-[#776C70]" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditedSupplier} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#776C70] font-bold mb-1">Supplier Business Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editSuppName}
+                  onChange={(e) => setEditSuppName(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg font-bold"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[#776C70] font-bold mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={editSuppPhone}
+                    onChange={(e) => setEditSuppPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#776C70] font-bold mb-1">City</label>
+                  <input
+                    type="text"
+                    value={editSuppCity}
+                    onChange={(e) => setEditSuppCity(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[#776C70] font-bold mb-1">GSTIN</label>
+                <input
+                  type="text"
+                  value={editSuppGstin}
+                  onChange={(e) => setEditSuppGstin(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-2 bg-[#F8F5F0] border border-[#E9DFE2] rounded-lg font-mono uppercase"
+                />
+              </div>
+              <div className="pt-2 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSupplier(null)}
+                  className="px-3 py-1.5 border rounded-lg text-stone-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSupplier}
+                  className="px-4 py-1.5 bg-[#681C32] text-white rounded-lg font-bold"
+                >
+                  {savingSupplier ? 'Saving...' : 'Update Supplier'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
