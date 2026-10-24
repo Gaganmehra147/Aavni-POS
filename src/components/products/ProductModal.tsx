@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Category, Supplier } from '../../types';
-import { api } from '../../lib/api';
-import { X, Plus, Trash2, Sparkles, Barcode } from 'lucide-react';
+import { X, Plus, Trash2, Sparkles, Barcode, Percent, TrendingUp, Sparkle } from 'lucide-react';
 
 interface ProductModalProps {
   product?: any;
@@ -30,9 +29,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [supplierId, setSupplierId] = useState<number | ''>(product?.supplier_id || '');
   const [description, setDescription] = useState(product?.description || '');
 
-  // Variants state
-  const [variants, setVariants] = useState<any[]>(
-    product?.variants || [
+  // Margin calculation state (default 50% = 1.5x markup)
+  const [globalMargin, setGlobalMargin] = useState<number>(() => {
+    const saved = localStorage.getItem('aavni_default_margin_percent');
+    return saved ? Number(saved) : 50;
+  });
+  const [customMarginInput, setCustomMarginInput] = useState<string>('50');
+
+  // Variants state with auto-computed margin_percent
+  const [variants, setVariants] = useState<any[]>(() => {
+    const defaultVars = product?.variants || [
       {
         sku: '',
         barcode: '',
@@ -44,8 +50,23 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         stock_quantity: 5,
         reorder_threshold: 3
       }
-    ]
-  );
+    ];
+
+    const savedMargin = Number(localStorage.getItem('aavni_default_margin_percent')) || 50;
+
+    return defaultVars.map((v: any) => {
+      const cost = Number(v.purchase_cost) || 0;
+      const selling = Number(v.selling_price) || 0;
+      let margin = savedMargin;
+      if (cost > 0 && selling > 0) {
+        margin = Math.round(((selling - cost) / cost) * 100);
+      }
+      return {
+        ...v,
+        margin_percent: margin
+      };
+    });
+  });
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -76,19 +97,51 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     return { genSku, genBarcode };
   };
 
+  // Apply a margin % across all variants and recalculate selling prices
+  const applyMarginToAll = (marginPct: number) => {
+    setGlobalMargin(marginPct);
+    setCustomMarginInput(marginPct.toString());
+    try {
+      localStorage.setItem('aavni_default_margin_percent', marginPct.toString());
+    } catch (_) {}
+
+    setVariants((prev) =>
+      prev.map((v) => {
+        const cost = Number(v.purchase_cost) || 0;
+        const newSelling = cost > 0 ? Math.round(cost * (1 + marginPct / 100)) : v.selling_price;
+        const newMrp = Math.max(Number(v.mrp) || 0, Math.round(newSelling * 1.3));
+        return {
+          ...v,
+          margin_percent: marginPct,
+          selling_price: newSelling,
+          mrp: newMrp
+        };
+      })
+    );
+  };
+
   const addVariantRow = () => {
     const idx = variants.length;
     const { genSku, genBarcode } = generateCodes(idx, 'L', 'Maroon');
+    const lastVar = variants[variants.length - 1];
+    const cost = Number(lastVar?.purchase_cost) || 1200;
+    const margin = lastVar?.margin_percent !== undefined && lastVar.margin_percent !== ''
+      ? Number(lastVar.margin_percent)
+      : globalMargin;
+    const selling = Math.round(cost * (1 + margin / 100));
+    const mrp = Math.max(Number(lastVar?.mrp) || 0, Math.round(selling * 1.3));
+
     setVariants([
       ...variants,
       {
         sku: genSku,
         barcode: genBarcode,
         size: 'L',
-        color: 'Maroon',
-        purchase_cost: variants[0]?.purchase_cost || 1200,
-        selling_price: variants[0]?.selling_price || 2499,
-        mrp: variants[0]?.mrp || 3499,
+        color: lastVar?.color || 'Maroon',
+        purchase_cost: cost,
+        margin_percent: margin,
+        selling_price: selling,
+        mrp: mrp,
         stock_quantity: 5,
         reorder_threshold: 3
       }
@@ -106,16 +159,58 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const updateVariantField = (idx: number, field: string, value: any) => {
     setVariants((prev) => {
       const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: value };
+      const current = { ...updated[idx], [field]: value };
 
-      // Auto update SKU if size or color changed and user hasn't explicitly customized
-      if (field === 'size' || field === 'color') {
-        const { genSku } = generateCodes(idx, field === 'size' ? value : updated[idx].size, field === 'color' ? value : updated[idx].color);
-        if (!updated[idx].sku || updated[idx].sku.startsWith(designCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())) {
-          updated[idx].sku = genSku;
+      // 1. Direct Cost change: Auto-calculate Selling Price using variant's Margin %
+      if (field === 'purchase_cost') {
+        const cost = Number(value) || 0;
+        const margin = current.margin_percent !== undefined && current.margin_percent !== ''
+          ? Number(current.margin_percent)
+          : globalMargin;
+        if (cost > 0) {
+          const newSelling = Math.round(cost * (1 + margin / 100));
+          current.selling_price = newSelling;
+          if (!current.mrp || current.mrp < newSelling) {
+            current.mrp = Math.round(newSelling * 1.3);
+          }
         }
       }
 
+      // 2. Direct Margin % change: Auto-calculate Selling Price
+      if (field === 'margin_percent') {
+        const marginVal = value === '' ? '' : Number(value);
+        current.margin_percent = marginVal;
+        const cost = Number(current.purchase_cost) || 0;
+        if (cost > 0 && marginVal !== '') {
+          const newSelling = Math.round(cost * (1 + Number(marginVal) / 100));
+          current.selling_price = newSelling;
+          if (!current.mrp || current.mrp < newSelling) {
+            current.mrp = Math.round(newSelling * 1.3);
+          }
+        }
+      }
+
+      // 3. Direct Selling Price change: Auto-calculate Margin %
+      if (field === 'selling_price') {
+        const selling = Number(value) || 0;
+        const cost = Number(current.purchase_cost) || 0;
+        if (cost > 0) {
+          current.margin_percent = Math.round(((selling - cost) / cost) * 100);
+        }
+        if (!current.mrp || current.mrp < selling) {
+          current.mrp = Math.round(selling * 1.3);
+        }
+      }
+
+      // Auto update SKU if size or color changed and user hasn't explicitly customized
+      if (field === 'size' || field === 'color') {
+        const { genSku } = generateCodes(idx, field === 'size' ? value : current.size, field === 'color' ? value : current.color);
+        if (!current.sku || current.sku.startsWith(designCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())) {
+          current.sku = genSku;
+        }
+      }
+
+      updated[idx] = current;
       return updated;
     });
   };
@@ -123,9 +218,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   // Quick multi-size variant generator
   const generateSizes = (sizes: string[]) => {
     const baseColor = variants[0]?.color || 'Maroon';
-    const baseCost = variants[0]?.purchase_cost || 1200;
-    const basePrice = variants[0]?.selling_price || 2499;
-    const baseMrp = variants[0]?.mrp || 3499;
+    const baseCost = Number(variants[0]?.purchase_cost) || 1200;
+    const baseMargin = variants[0]?.margin_percent !== undefined && variants[0].margin_percent !== ''
+      ? Number(variants[0].margin_percent)
+      : globalMargin;
+    const basePrice = Math.round(baseCost * (1 + baseMargin / 100));
+    const baseMrp = variants[0]?.mrp && variants[0].mrp >= basePrice ? variants[0].mrp : Math.round(basePrice * 1.3);
 
     const newVars = sizes.map((sz, idx) => {
       const { genSku, genBarcode } = generateCodes(idx, sz, baseColor);
@@ -135,6 +233,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         size: sz,
         color: baseColor,
         purchase_cost: baseCost,
+        margin_percent: baseMargin,
         selling_price: basePrice,
         mrp: baseMrp,
         stock_quantity: 5,
@@ -356,6 +455,69 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
           </div>
 
+          {/* Quick Auto Margin Bar */}
+          <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50/60 rounded-xl border border-amber-200/90 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+            <div className="flex items-center space-x-2">
+              <span className="p-1 rounded-md bg-[#681C32] text-white">
+                <Percent className="w-3.5 h-3.5" />
+              </span>
+              <div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-xs font-bold text-[#681C32]">Auto Margin Setup:</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded-full">
+                    Active: {globalMargin}%
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-600">
+                  Cost enter karte hi Selling Price par direct margin auto-apply ho jayega
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-1.5 flex-wrap">
+              <span className="text-[11px] text-stone-600 font-semibold mr-0.5">Presets:</span>
+              {[25, 30, 40, 50, 60, 80, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => applyMarginToAll(pct)}
+                  className={`px-2 py-0.5 rounded text-xs font-bold border transition-colors cursor-pointer ${
+                    globalMargin === pct
+                      ? 'bg-[#681C32] text-white border-[#681C32] shadow-xs'
+                      : 'bg-white text-stone-700 border-amber-200 hover:bg-amber-100'
+                  }`}
+                  title={`Sabhi variants par ${pct}% margin lagayein`}
+                >
+                  +{pct}%{pct === 100 ? ' (2x)' : ''}
+                </button>
+              ))}
+
+              <div className="flex items-center ml-1.5 space-x-1">
+                <div className="relative flex items-center">
+                  <input
+                    type="number"
+                    value={customMarginInput}
+                    onChange={(e) => setCustomMarginInput(e.target.value)}
+                    placeholder="50"
+                    className="w-14 pl-1.5 pr-4 py-0.5 text-xs border border-amber-300 rounded bg-white font-mono font-bold text-center text-[#681C32] focus:outline-none focus:border-[#681C32]"
+                  />
+                  <span className="absolute right-1 text-[10px] font-bold text-amber-700 pointer-events-none">%</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val = Number(customMarginInput);
+                    if (val > 0) applyMarginToAll(val);
+                  }}
+                  className="px-2 py-0.5 bg-[#681C32] hover:bg-[#501426] text-white rounded text-xs font-bold cursor-pointer"
+                  title="Sabhi variants par custom margin apply karein"
+                >
+                  Apply All
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Variants Table */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -381,6 +543,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     <th className="p-2">SKU</th>
                     <th className="p-2">Barcode</th>
                     <th className="p-2">Cost (₹)</th>
+                    <th className="p-2 text-center bg-amber-50/80 text-amber-900 border-x border-amber-200/80">Margin</th>
                     <th className="p-2">Selling (₹)</th>
                     <th className="p-2">MRP (₹)</th>
                     <th className="p-2">Stock</th>
@@ -433,15 +596,39 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                           type="number"
                           value={v.purchase_cost}
                           onChange={(e) => updateVariantField(idx, 'purchase_cost', Number(e.target.value) || 0)}
-                          className="w-20 p-1 border border-[#E9DFE2] rounded bg-white font-mono"
+                          placeholder="Cost"
+                          className="w-20 p-1 border border-[#E9DFE2] rounded bg-white font-mono font-bold text-stone-800 focus:border-[#681C32]"
+                          title="Cost Price (₹)"
                         />
+                      </td>
+                      <td className="p-2 bg-amber-50/40 border-x border-amber-200/60">
+                        <div className="flex flex-col items-center">
+                          <div className="relative flex items-center justify-center w-full">
+                            <input
+                              type="number"
+                              value={v.margin_percent !== undefined ? v.margin_percent : ''}
+                              onChange={(e) => updateVariantField(idx, 'margin_percent', e.target.value === '' ? '' : Number(e.target.value))}
+                              placeholder="%"
+                              className="w-16 p-1 pr-4 border border-amber-300 rounded bg-white font-mono font-bold text-center text-amber-950 focus:outline-none focus:border-[#681C32]"
+                              title="Margin % over Cost (Enter karein ya badlein)"
+                            />
+                            <span className="absolute right-1 text-[11px] font-bold text-amber-600 pointer-events-none">%</span>
+                          </div>
+                          {v.purchase_cost > 0 && v.selling_price > v.purchase_cost && (
+                            <span className="text-[10px] font-bold text-emerald-700 mt-0.5 whitespace-nowrap" title="Rupee Profit Margin">
+                              +₹{(v.selling_price - v.purchase_cost).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-2">
                         <input
                           type="number"
                           value={v.selling_price}
                           onChange={(e) => updateVariantField(idx, 'selling_price', Number(e.target.value) || 0)}
-                          className="w-20 p-1 border border-[#E9DFE2] rounded bg-white font-mono font-bold text-[#681C32]"
+                          placeholder="Selling"
+                          className="w-20 p-1 border border-[#681C32]/30 rounded bg-emerald-50/40 font-mono font-bold text-[#681C32] focus:bg-white focus:border-[#681C32]"
+                          title="Selling Price (₹) - Auto-calculated from Cost + Margin"
                         />
                       </td>
                       <td className="p-2">
